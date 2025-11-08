@@ -17,7 +17,9 @@ from app.core.database import db_manager
 from app.core.logger import app_logger
 from app.models import ExportTemplate
 from app.utils.ui_constants import (
-    FONT_SIZE_TITLE, FONT_SIZE_LABEL,
+    FONT_SIZE_TITLE, FONT_SIZE_LABEL, FONT_SIZE_NORMAL,
+    BUTTON_HEIGHT_LARGE, BUTTON_HEIGHT_MEDIUM,
+    COLOR_PRIMARY, COLOR_SUCCESS, COLOR_DANGER,
     get_button_style
 )
 from app.gui.widgets.column_mapping_widget import ColumnMappingWidget
@@ -64,14 +66,47 @@ class TemplateWizard(QWizard):
         # شروع از اولین صفحه
         self.setStartId(self.PAGE_SELECT_FILE)
         
-        # استایل
-        self.setStyleSheet("""
-            QWizard {
-                background-color: #f5f5f5;
-            }
-            QWizardPage {
+        # استایل یکپارچه با سایر فرم‌ها
+        self.setStyleSheet(f"""
+            QWizard {{
+                background-color: #f8f9fa;
+            }}
+            QWizardPage {{
                 background-color: white;
-            }
+            }}
+            QGroupBox {{
+                font-weight: bold;
+                font-size: {FONT_SIZE_LABEL}pt;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 8px;
+                background-color: #fafafa;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+                background-color: white;
+            }}
+            QLabel {{
+                font-size: {FONT_SIZE_NORMAL}pt;
+            }}
+            QLineEdit, QTextEdit, QComboBox {{
+                border: 2px solid #e0e0e0;
+                border-radius: 5px;
+                padding: 8px;
+                font-size: {FONT_SIZE_NORMAL}pt;
+                background-color: white;
+            }}
+            QLineEdit:focus, QTextEdit:focus, QComboBox:focus {{
+                border: 2px solid {COLOR_PRIMARY};
+            }}
+            QPushButton {{
+                border-radius: 8px;
+                font-weight: bold;
+                padding: 10px;
+            }}
         """)
     
     def create_select_file_page(self):
@@ -110,8 +145,8 @@ class TemplateWizard(QWizard):
         file_layout.addWidget(self.file_path_label)
         
         select_file_btn = QPushButton("📁 انتخاب فایل Excel")
-        select_file_btn.setMinimumHeight(50)
-        select_file_btn.setStyleSheet(get_button_style("primary", 12, 50))
+        select_file_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
+        select_file_btn.setStyleSheet(get_button_style(COLOR_PRIMARY, FONT_SIZE_LABEL, BUTTON_HEIGHT_LARGE))
         select_file_btn.clicked.connect(self.select_excel_file)
         file_layout.addWidget(select_file_btn)
         
@@ -524,8 +559,54 @@ class TemplateManagerDialog(QDialog):
         self.resize(900, 600)
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         
+        # استایل یکپارچه با سایر دیالوگ‌ها
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: #f8f9fa;
+            }}
+            QLabel {{
+                font-size: {FONT_SIZE_NORMAL}pt;
+            }}
+            QGroupBox {{
+                font-weight: bold;
+                font-size: {FONT_SIZE_LABEL}pt;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 8px;
+                background-color: white;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+                background-color: #f8f9fa;
+            }}
+            QListWidget {{
+                background-color: white;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 5px;
+            }}
+            QListWidget::item {{
+                padding: 12px;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin: 5px;
+                background: white;
+            }}
+            QListWidget::item:selected {{
+                background: #E3F2FD;
+                border: 2px solid {COLOR_PRIMARY};
+            }}
+            QListWidget::item:hover {{
+                background: #f5f5f5;
+            }}
+        """)
+        
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
         # عنوان
         title = QLabel("📋 مدیریت Template های Export")
@@ -533,27 +614,16 @@ class TemplateManagerDialog(QDialog):
         title_font.setPointSize(FONT_SIZE_TITLE)
         title_font.setBold(True)
         title.setFont(title_font)
+        title.setStyleSheet(f"color: {COLOR_PRIMARY}; padding: 10px;")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
         
         # لیست Template ها
         self.templates_list = QListWidget()
-        self.templates_list.setStyleSheet("""
-            QListWidget {
-                font-size: 11pt;
-                padding: 10px;
-            }
-            QListWidget::item {
-                padding: 12px;
-                border: 2px solid #ddd;
-                border-radius: 8px;
-                margin: 5px;
-                background: white;
-            }
-            QListWidget::item:selected {
-                background: #E3F2FD;
-                border: 2px solid #2196F3;
-            }
+        self.templates_list.setStyleSheet(f"""
+            QListWidget {{
+                font-size: {FONT_SIZE_NORMAL}pt;
+            }}
         """)
         layout.addWidget(self.templates_list, 1)
         
@@ -562,20 +632,20 @@ class TemplateManagerDialog(QDialog):
         buttons_layout.setSpacing(10)
         
         add_btn = QPushButton("➕ ساخت Template جدید")
-        add_btn.setMinimumHeight(50)
-        add_btn.setStyleSheet(get_button_style("success", 12, 50))
+        add_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
+        add_btn.setStyleSheet(get_button_style(COLOR_SUCCESS, FONT_SIZE_LABEL, BUTTON_HEIGHT_LARGE))
         add_btn.clicked.connect(self.add_template)
         buttons_layout.addWidget(add_btn)
         
         edit_btn = QPushButton("✏️ ویرایش")
-        edit_btn.setMinimumHeight(50)
-        edit_btn.setStyleSheet(get_button_style("primary", 12, 50))
+        edit_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
+        edit_btn.setStyleSheet(get_button_style(COLOR_PRIMARY, FONT_SIZE_LABEL, BUTTON_HEIGHT_LARGE))
         edit_btn.clicked.connect(self.edit_template)
         buttons_layout.addWidget(edit_btn)
         
         delete_btn = QPushButton("🗑️ حذف")
-        delete_btn.setMinimumHeight(50)
-        delete_btn.setStyleSheet(get_button_style("danger", 12, 50))
+        delete_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
+        delete_btn.setStyleSheet(get_button_style(COLOR_DANGER, FONT_SIZE_LABEL, BUTTON_HEIGHT_LARGE))
         delete_btn.clicked.connect(self.delete_template)
         buttons_layout.addWidget(delete_btn)
         

@@ -14,6 +14,7 @@ SMALL_DIALOG_HEIGHT_RATIO = 0.6 # 60% ارتفاع
 # اندازه فونت‌ها (بر حسب pt)
 FONT_SIZE_TITLE = 18           # عنوان اصلی صفحات
 FONT_SIZE_SECTION = 14         # عنوان بخش‌ها
+FONT_SIZE_NORMAL = 11          # متن عادی
 FONT_SIZE_BUTTON = 11          # متن دکمه‌ها
 FONT_SIZE_LABEL = 10           # برچسب‌های معمولی
 FONT_SIZE_INPUT = 10           # فیلدهای ورودی

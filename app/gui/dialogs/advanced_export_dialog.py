@@ -17,7 +17,7 @@ from typing import Optional
 from app.core.database import db_manager
 from app.core.excel_exporter import excel_exporter
 from app.core.logger import app_logger
-from app.gui.dialogs.template_manager_dialog import TemplateManagerDialog
+from app.gui.dialogs.template_manager_dialog_advanced import TemplateManagerDialog
 
 
 class ExportWorker(QThread):
