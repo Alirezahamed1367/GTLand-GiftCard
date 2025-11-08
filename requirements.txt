@@ -1,0 +1,47 @@
+# Google Sheets API
+gspread==6.2.1
+google-auth==2.28.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+tenacity==9.1.2
+
+# Database
+SQLAlchemy==2.0.44
+alembic==1.13.1
+
+# Data Processing
+pandas>=2.2.3
+numpy>=1.26.4
+
+# Excel (Updated for Template-based Export)
+openpyxl==3.1.5
+et-xmlfile==2.0.0
+xlsxwriter==3.1.9
+xlrd==2.0.1
+
+# GUI
+PyQt6==6.6.1
+PyQt6-WebEngine==6.6.0
+pyqtgraph==0.13.3
+
+# Configuration
+python-dotenv==1.0.0
+pyyaml==6.0.1
+configparser==6.0.0
+
+# Logging
+loguru==0.7.2
+
+# Utilities
+python-dateutil==2.8.2
+tqdm==4.66.1
+requests==2.31.0
+tenacity==8.2.3
+validators==0.22.0
+
+# Development
+pytest==8.0.0
+pytest-qt==4.3.1
+black==24.1.1
+flake8==7.0.0
+mypy==1.8.0
