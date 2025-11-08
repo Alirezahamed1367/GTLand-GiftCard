@@ -345,11 +345,20 @@ class TemplateWizard(QWizard):
             # دریافت از دیتابیس
             sheet_configs = db_manager.get_all_sheet_configs(active_only=True)
             
+            if not sheet_configs:
+                # اگر هیچ Sheet ای نیست، یک پیام نمایش بده
+                self.sheets_list.addItem("⚠️ هیچ Google Sheet فعالی یافت نشد")
+                return
+            
             for config in sheet_configs:
                 # تحلیل ستون‌ها
                 columns = []
                 if config.column_mappings:
                     columns = list(config.column_mappings.keys())
+                
+                # اگر ستونی نداریم، از نام‌های نمونه استفاده کن
+                if not columns:
+                    columns = ['Column_A', 'Column_B', 'Column_C', 'Column_D', 'Column_E']
                 
                 self.available_sheets[config.id] = {
                     'name': config.name,
@@ -372,30 +381,61 @@ class TemplateWizard(QWizard):
         
         except Exception as e:
             app_logger.error(f"Error loading sheet configs: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "خطا", f"خطا در بارگذاری Google Sheets:\n{str(e)}")
     
     def initializePage(self, page_id):
         """هنگام ورود به هر صفحه"""
-        if page_id == self.PAGE_MAPPING:
-            # ساخت ویجت Mapping
-            if not self.mapping_widget:
-                # دریافت Sheet های انتخابی
-                selected_sheets = {}
-                for item in self.sheets_list.selectedItems():
-                    sheet_id = item.data(Qt.ItemDataRole.UserRole)
-                    selected_sheets[sheet_id] = self.available_sheets[sheet_id]
-                
-                # ساخت ویجت
-                excel_cols = [col['letter'] for col in self.excel_columns]
-                self.mapping_widget = ColumnMappingWidget(
-                    self,
-                    excel_columns=excel_cols,
-                    available_sheets=selected_sheets
-                )
-                self.mapping_widget_container.addWidget(self.mapping_widget)
+        try:
+            if page_id == self.PAGE_MAPPING:
+                # ساخت ویجت Mapping
+                if not self.mapping_widget:
+                    # دریافت Sheet های انتخابی
+                    selected_sheets = {}
+                    for item in self.sheets_list.selectedItems():
+                        sheet_id = item.data(Qt.ItemDataRole.UserRole)
+                        if sheet_id and sheet_id in self.available_sheets:
+                            selected_sheets[sheet_id] = self.available_sheets[sheet_id]
+                    
+                    # بررسی اینکه حداقل یک Sheet داریم
+                    if not selected_sheets:
+                        QMessageBox.warning(
+                            self,
+                            "هشدار",
+                            "هیچ Google Sheet فعالی انتخاب نشده است.\n\n"
+                            "لطفاً ابتدا از منوی اصلی یک Google Sheet تنظیم کنید."
+                        )
+                        return
+                    
+                    # بررسی اینکه Excel columns داریم
+                    if not self.excel_columns:
+                        QMessageBox.warning(
+                            self,
+                            "هشدار",
+                            "ستون‌های Excel شناسایی نشدند.\n\n"
+                            "لطفاً یک فایل Excel معتبر انتخاب کنید."
+                        )
+                        return
+                    
+                    # ساخت ویجت
+                    excel_cols = [col['letter'] for col in self.excel_columns]
+                    self.mapping_widget = ColumnMappingWidget(
+                        self,
+                        excel_columns=excel_cols,
+                        available_sheets=selected_sheets
+                    )
+                    self.mapping_widget_container.addWidget(self.mapping_widget)
+            
+            elif page_id == self.PAGE_SETTINGS:
+                # به‌روزرسانی خلاصه
+                self.update_summary()
         
-        elif page_id == self.PAGE_SETTINGS:
-            # به‌روزرسانی خلاصه
-            self.update_summary()
+        except Exception as e:
+            app_logger.error(f"Error in initializePage: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "خطا", f"خطا در بارگذاری صفحه:\n{str(e)}")
     
     def update_summary(self):
         """به‌روزرسانی خلاصه Template"""

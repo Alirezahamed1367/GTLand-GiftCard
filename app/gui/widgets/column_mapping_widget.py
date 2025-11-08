@@ -34,7 +34,7 @@ class DraggableColumnItem(QListWidgetItem):
 class DroppableColumnList(QListWidget):
     """لیست قابل Drop برای ستون‌های Excel"""
     
-    columnMapped = pyqtSignal(str, str, str)  # excel_col, source_col, source_sheet
+    columnMapped = pyqtSignal(str, str, object)  # excel_col, source_col, source_sheet (can be int or str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,14 +76,26 @@ class DroppableColumnList(QListWidget):
     
     def dropEvent(self, event):
         """هنگام Drop کردن"""
-        if event.mimeData().hasText():
+        try:
+            if not event.mimeData().hasText():
+                return
+            
             # دریافت اطلاعات ستون مبدا
             data = json.loads(event.mimeData().text())
             source_col = data.get('column_name')
             source_sheet = data.get('source_sheet')
             
+            if not source_col or not source_sheet:
+                return
+            
             # پیدا کردن آیتم Excel که روی آن Drop شده
-            item = self.itemAt(event.position().toPoint())
+            # استفاده از pos() به جای position().toPoint() برای سازگاری
+            try:
+                pos = event.position().toPoint()
+            except:
+                pos = event.pos()
+            
+            item = self.itemAt(pos)
             if item:
                 excel_col = item.data(Qt.ItemDataRole.UserRole)
                 
@@ -102,6 +114,11 @@ class DroppableColumnList(QListWidget):
                 self.columnMapped.emit(excel_col, source_col, source_sheet)
                 
                 event.acceptProposedAction()
+        
+        except Exception as e:
+            print(f"Error in dropEvent: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 class SourceColumnsList(QListWidget):
@@ -130,27 +147,42 @@ class SourceColumnsList(QListWidget):
             }
             QListWidget::item:hover {
                 background-color: #C8E6C9;
-                cursor: grab;
             }
         """)
     
     def startDrag(self, supportedActions):
         """شروع Drag"""
-        item = self.currentItem()
-        if item:
+        try:
+            item = self.currentItem()
+            if not item:
+                return
+            
             drag = QDrag(self)
             mime_data = QMimeData()
             
+            # دریافت نام ستون و sheet
+            column_name = item.data(Qt.ItemDataRole.UserRole)
+            current_sheet = self.property('current_sheet')
+            
+            if not column_name or not current_sheet:
+                print(f"Warning: Missing data - column: {column_name}, sheet: {current_sheet}")
+                return
+            
             # ارسال اطلاعات به صورت JSON
             data = {
-                'column_name': item.data(Qt.ItemDataRole.UserRole),
-                'source_sheet': self.property('current_sheet')
+                'column_name': column_name,
+                'source_sheet': current_sheet
             }
             mime_data.setText(json.dumps(data))
             drag.setMimeData(mime_data)
             
             # شروع Drag
             drag.exec(Qt.DropAction.CopyAction)
+        
+        except Exception as e:
+            print(f"Error in startDrag: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 class ColumnMappingWidget(QWidget):
@@ -176,6 +208,21 @@ class ColumnMappingWidget(QWidget):
         """راه‌اندازی رابط کاربری"""
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(15)
+        
+        # بررسی داده‌های ورودی
+        if not self.excel_columns:
+            error_label = QLabel("⚠️ خطا: هیچ ستون Excel ای یافت نشد")
+            error_label.setStyleSheet("color: red; font-size: 14pt; padding: 20px;")
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            main_layout.addWidget(error_label)
+            return
+        
+        if not self.available_sheets:
+            error_label = QLabel("⚠️ خطا: هیچ Google Sheet ای یافت نشد")
+            error_label.setStyleSheet("color: red; font-size: 14pt; padding: 20px;")
+            error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            main_layout.addWidget(error_label)
+            return
         
         # عنوان
         title_label = QLabel("🔗 Mapping ستون‌های Google Sheet به Excel")
