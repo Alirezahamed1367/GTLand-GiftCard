@@ -115,47 +115,61 @@ class GoogleSheetExtractor:
             self.logger.info(f"📊 هدرهای یافت شده: {headers}")
             self.logger.info(f"تعداد کل ردیف‌ها: {len(all_values) - 1}")
             
-            # پیدا کردن ستون آماده (Ready) با جستجوی هوشمند
-            try:
-                ready_col_idx = column_letter_to_index(ready_column)
-                self.logger.info(f"✅ ستون آماده از طریق حرف: {ready_column} -> index {ready_col_idx}")
-            except:
-                # جستجوی case-insensitive و trim شده
-                ready_col_idx = -1
-                ready_column_lower = ready_column.strip().lower()
-                
-                for idx, header in enumerate(headers):
-                    header_clean = str(header).strip().lower()
-                    if header_clean == ready_column_lower:
-                        ready_col_idx = idx
-                        self.logger.info(f"✅ ستون آماده پیدا شد: '{header}' (index {idx})")
-                        break
-                
-                if ready_col_idx == -1:
-                    self.logger.error(f"❌ ستون آماده '{ready_column}' یافت نشد!")
-                    self.logger.error(f"📋 هدرهای موجود: {headers}")
-                    return []
+            # ==================== پیدا کردن ستون آماده (Ready) ====================
+            ready_col_idx = -1
+            ready_column_clean = ready_column.strip().lower()
             
-            # پیدا کردن ستون استخراج شده (Extracted) با جستجوی هوشمند
-            try:
-                extracted_col_idx = column_letter_to_index(extracted_column)
-                self.logger.info(f"✅ ستون استخراج از طریق حرف: {extracted_column} -> index {extracted_col_idx}")
-            except:
-                # جستجوی case-insensitive و trim شده
-                extracted_col_idx = -1
-                extracted_column_lower = extracted_column.strip().lower()
-                
-                for idx, header in enumerate(headers):
-                    header_clean = str(header).strip().lower()
-                    if header_clean == extracted_column_lower:
-                        extracted_col_idx = idx
-                        self.logger.info(f"✅ ستون استخراج پیدا شد: '{header}' (index {idx})")
-                        break
-                
-                if extracted_col_idx == -1:
-                    self.logger.error(f"❌ ستون استخراج '{extracted_column}' یافت نشد!")
-                    self.logger.error(f"📋 هدرهای موجود: {headers}")
-                    return []
+            # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
+            for idx, header in enumerate(headers):
+                header_clean = str(header).strip().lower()
+                if header_clean == ready_column_clean:
+                    ready_col_idx = idx
+                    self.logger.info(f"✅ ستون آماده پیدا شد با نام: '{header}' (index {idx})")
+                    break
+            
+            # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
+            if ready_col_idx == -1 and len(ready_column) <= 3 and ready_column.isalpha():
+                try:
+                    ready_col_idx = column_letter_to_index(ready_column)
+                    if ready_col_idx < len(headers):
+                        self.logger.info(f"✅ ستون آماده پیدا شد با حرف: {ready_column} -> '{headers[ready_col_idx]}' (index {ready_col_idx})")
+                    else:
+                        ready_col_idx = -1
+                except:
+                    pass
+            
+            if ready_col_idx == -1:
+                self.logger.error(f"❌ ستون آماده '{ready_column}' یافت نشد!")
+                self.logger.error(f"📋 هدرهای موجود: {headers}")
+                return []
+            
+            # ==================== پیدا کردن ستون استخراج شده (Extracted) ====================
+            extracted_col_idx = -1
+            extracted_column_clean = extracted_column.strip().lower()
+            
+            # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
+            for idx, header in enumerate(headers):
+                header_clean = str(header).strip().lower()
+                if header_clean == extracted_column_clean:
+                    extracted_col_idx = idx
+                    self.logger.info(f"✅ ستون استخراج پیدا شد با نام: '{header}' (index {idx})")
+                    break
+            
+            # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
+            if extracted_col_idx == -1 and len(extracted_column) <= 3 and extracted_column.isalpha():
+                try:
+                    extracted_col_idx = column_letter_to_index(extracted_column)
+                    if extracted_col_idx < len(headers):
+                        self.logger.info(f"✅ ستون استخراج پیدا شد با حرف: {extracted_column} -> '{headers[extracted_col_idx]}' (index {extracted_col_idx})")
+                    else:
+                        extracted_col_idx = -1
+                except:
+                    pass
+            
+            if extracted_col_idx == -1:
+                self.logger.error(f"❌ ستون استخراج '{extracted_column}' یافت نشد!")
+                self.logger.error(f"📋 هدرهای موجود: {headers}")
+                return []
             if columns_to_extract:
                 col_indices, col_names = [], []
                 for col in columns_to_extract:
@@ -206,65 +220,211 @@ class GoogleSheetExtractor:
         """علامت‌گذاری یک ردیف - برای سازگاری با کدهای قدیمی"""
         return self.mark_rows_as_extracted(sheet_url, worksheet_name, [row_number], extracted_column)
     
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def mark_rows_as_extracted(self, sheet_url, worksheet_name, row_numbers: List[int], extracted_column):
+    def mark_rows_as_extracted(self, sheet_url, worksheet_name, row_numbers: List[int], extracted_column, progress_callback=None):
         """
-        علامت‌گذاری چندین ردیف به صورت یکجا (Batch Update)
-        این روش تعداد API calls را کاهش می‌دهد و از Rate Limit جلوگیری می‌کند
+        علامت‌گذاری چندین ردیف با مدیریت پیشرفته خطا و تقسیم‌بندی هوشمند
+        
+        این متد:
+        - رکوردها را به بچ‌های کوچک تقسیم می‌کند (500 رکورد)
+        - از timeout و retry استفاده می‌کند
+        - پیشرفت را گزارش می‌دهد
+        - در صورت خطا، بچ را به قسمت‌های کوچک‌تر تقسیم می‌کند
         
         Args:
             sheet_url: آدرس Google Sheet
             worksheet_name: نام worksheet
             row_numbers: لیست شماره ردیف‌ها
             extracted_column: نام یا حرف ستون
+            progress_callback: تابع گزارش پیشرفت (فعلی, کل, پیام)
+        
+        Returns:
+            (موفقیت, پیام, آمار)
         """
         try:
             if not row_numbers:
-                return True, "هیچ ردیفی برای علامت‌گذاری نیست"
+                return True, "هیچ ردیفی برای علامت‌گذاری نیست", {}
             
+            total_rows = len(row_numbers)
+            self.logger.info(f"🔄 شروع علامت‌گذاری {total_rows:,} ردیف...")
+            
+            # اتصال به شیت
             sheet = self.client.open_by_url(sheet_url)
             worksheet = sheet.worksheet(worksheet_name) if worksheet_name else sheet.sheet1
             
-            # پیدا کردن ایندکس ستون
-            try:
-                col_index = column_letter_to_index(extracted_column) + 1
-            except:
-                headers = worksheet.row_values(1)
-                if extracted_column not in headers:
-                    return False, "ستون یافت نشد"
-                col_index = headers.index(extracted_column) + 1
+            # پیدا کردن ایندکس ستون با منطق جدید
+            headers = worksheet.row_values(1)
+            extracted_col_idx = -1
+            extracted_column_clean = extracted_column.strip().lower()
             
-            # ساخت لیست سلول‌ها برای batch update
-            cell_list = []
-            for row_num in row_numbers:
-                cell_list.append(gspread.Cell(row_num, col_index, "TRUE"))
+            # جستجوی نام ستون
+            for idx, header in enumerate(headers):
+                if str(header).strip().lower() == extracted_column_clean:
+                    extracted_col_idx = idx + 1  # +1 برای gspread (1-indexed)
+                    break
             
-            # یک بار update (به جای N بار!)
-            worksheet.update_cells(cell_list, value_input_option='USER_ENTERED')
-            # time.sleep(0.3)
-            self.logger.success(f"✅ {len(row_numbers)} ردیف به صورت batch علامت‌گذاری شد")
-            return True, f"{len(row_numbers)} ردیف علامت‌گذاری شد"
+            # اگر نیافت، شاید حرف ستون باشد
+            if extracted_col_idx == -1 and len(extracted_column) <= 3 and extracted_column.isalpha():
+                try:
+                    extracted_col_idx = column_letter_to_index(extracted_column) + 1
+                except:
+                    pass
             
+            if extracted_col_idx == -1:
+                return False, f"ستون '{extracted_column}' یافت نشد", {}
+            
+            self.logger.info(f"✅ ستون استخراج: index {extracted_col_idx}")
+            
+            # تقسیم به بچ‌های کوچک برای جلوگیری از timeout
+            BATCH_SIZE = 500  # تعداد رکورد در هر بچ
+            total_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            success_count = 0
+            failed_batches = []
+            
+            for batch_num in range(total_batches):
+                start_idx = batch_num * BATCH_SIZE
+                end_idx = min(start_idx + BATCH_SIZE, total_rows)
+                batch_rows = row_numbers[start_idx:end_idx]
+                batch_size = len(batch_rows)
+                
+                # گزارش پیشرفت
+                if progress_callback:
+                    progress_callback(success_count, total_rows, f"علامت‌گذاری بچ {batch_num + 1}/{total_batches}")
+                
+                self.logger.info(f"📦 بچ {batch_num + 1}/{total_batches}: {batch_size} ردیف (از {start_idx + 1} تا {end_idx})")
+                
+                try:
+                    # تلاش برای update با timeout
+                    success = self._update_batch_with_retry(
+                        worksheet, batch_rows, extracted_col_idx, 
+                        max_attempts=3, initial_batch_size=batch_size
+                    )
+                    
+                    if success:
+                        success_count += batch_size
+                        self.logger.success(f"✅ بچ {batch_num + 1} موفق: {batch_size} ردیف")
+                    else:
+                        failed_batches.append(batch_num + 1)
+                        self.logger.error(f"❌ بچ {batch_num + 1} ناموفق")
+                        
+                except Exception as e:
+                    failed_batches.append(batch_num + 1)
+                    self.logger.error(f"❌ خطا در بچ {batch_num + 1}: {str(e)}")
+                
+                # تاخیر کوتاه بین بچ‌ها برای جلوگیری از rate limit
+                if batch_num < total_batches - 1:
+                    time.sleep(1)
+            
+            # گزارش نهایی
+            stats = {
+                'total': total_rows,
+                'success': success_count,
+                'failed': total_rows - success_count,
+                'failed_batches': failed_batches
+            }
+            
+            if success_count == total_rows:
+                msg = f"✅ تمام {total_rows:,} ردیف با موفقیت علامت‌گذاری شدند"
+                self.logger.success(msg)
+                return True, msg, stats
+            elif success_count > 0:
+                msg = f"⚠️ {success_count:,} از {total_rows:,} ردیف علامت‌گذاری شد (بچ‌های ناموفق: {failed_batches})"
+                self.logger.warning(msg)
+                return True, msg, stats
+            else:
+                msg = f"❌ هیچ ردیفی علامت‌گذاری نشد"
+                self.logger.error(msg)
+                return False, msg, stats
+                
         except Exception as e:
-            self.logger.error(f"خطا در علامت‌گذاری batch: {str(e)}")
-            return False, str(e)
+            self.logger.error(f"❌ خطای کلی در علامت‌گذاری: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False, f"خطا: {str(e)}", {'total': len(row_numbers), 'success': 0, 'failed': len(row_numbers)}
     
-    def extract_and_save(self, sheet_config_id: int, auto_update: bool = False) -> Tuple[bool, str, Dict]:
+    def _update_batch_with_retry(self, worksheet, row_numbers, col_idx, max_attempts=3, initial_batch_size=None):
         """
-        استخراج و ذخیره داده از یک شیت
+        تلاش برای update یک بچ با retry و تقسیم‌بندی در صورت خطا
+        
+        Args:
+            worksheet: worksheet object
+            row_numbers: لیست شماره ردیف‌ها
+            col_idx: ایندکس ستون
+            max_attempts: حداکثر تلاش
+            initial_batch_size: اندازه اولیه بچ
+        
+        Returns:
+            bool: موفقیت
+        """
+        batch_size = initial_batch_size or len(row_numbers)
+        
+        for attempt in range(max_attempts):
+            try:
+                # ساخت لیست سلول‌ها
+                cell_list = []
+                for row_num in row_numbers:
+                    cell_list.append(gspread.Cell(row_num, col_idx, "TRUE"))
+                
+                # تلاش برای update
+                worksheet.update_cells(cell_list, value_input_option='USER_ENTERED')
+                return True
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # اگر خطای timeout یا connection بود
+                if 'timeout' in error_msg or 'connection' in error_msg or 'aborted' in error_msg:
+                    # تقسیم بچ به دو نیمه و تلاش مجدد
+                    if len(row_numbers) > 10:  # فقط اگر بچ بزرگ باشد
+                        mid = len(row_numbers) // 2
+                        self.logger.warning(f"⚠️ تقسیم بچ به دو نیمه ({mid} + {len(row_numbers) - mid})")
+                        
+                        # تلاش برای نیمه اول
+                        success1 = self._update_batch_with_retry(
+                            worksheet, row_numbers[:mid], col_idx, 
+                            max_attempts=2, initial_batch_size=mid
+                        )
+                        
+                        # تلاش برای نیمه دوم
+                        success2 = self._update_batch_with_retry(
+                            worksheet, row_numbers[mid:], col_idx,
+                            max_attempts=2, initial_batch_size=len(row_numbers) - mid
+                        )
+                        
+                        return success1 and success2
+                
+                # اگر تلاش آخر بود
+                if attempt == max_attempts - 1:
+                    self.logger.error(f"❌ شکست بعد از {max_attempts} تلاش: {str(e)}")
+                    return False
+                
+                # تاخیر قبل از تلاش بعدی
+                wait_time = 2 ** attempt  # exponential backoff
+                self.logger.warning(f"⚠️ تلاش {attempt + 1} ناموفق، صبر {wait_time}s...")
+                time.sleep(wait_time)
+        
+        return False
+    
+    def extract_and_save(self, sheet_config_id: int, auto_update: bool = False, progress_callback=None) -> Tuple[bool, str, Dict]:
+        """
+        استخراج و ذخیره داده از یک شیت با گزارش پیشرفت دقیق
         
         Args:
             sheet_config_id: شناسه تنظیمات شیت
             auto_update: بروزرسانی خودکار بدون تایید کاربر
+            progress_callback: تابع (current, total, message) برای گزارش پیشرفت
             
         Returns:
-            (موفقیت, پیام, آمار)
+            (موفقیت, پیام, آمار کامل)
         """
         from app.core.database import db_manager
         import json
         
         try:
             # دریافت تنظیمات شیت
+            if progress_callback:
+                progress_callback(0, 100, "دریافت تنظیمات شیت")
+            
             sheet_config = db_manager.get_sheet_config(sheet_config_id)
             
             if not sheet_config:
@@ -274,25 +434,37 @@ class GoogleSheetExtractor:
                 return False, "شیت غیرفعال است", {}
             
             # استخراج داده‌ها
-            # columns_to_extract قبلاً یک لیست است (JSON در دیتابیس)
+            if progress_callback:
+                progress_callback(10, 100, "اتصال به Google Sheets")
+            
             ready_rows = self.extract_ready_rows(
                 sheet_url=sheet_config.sheet_url,
                 worksheet_name=sheet_config.worksheet_name or 'Sheet1',
                 ready_column=sheet_config.ready_column,
                 extracted_column=sheet_config.extracted_column,
-                columns_to_extract=sheet_config.columns_to_extract  # قبلاً لیست است
+                columns_to_extract=sheet_config.columns_to_extract
             )
             
             if not ready_rows:
-                return True, "هیچ ردیف آماده‌ای یافت نشد", {'new_records': 0, 'updated_records': 0, 'duplicates': [], 'warnings': []}
+                return True, "هیچ ردیف آماده‌ای یافت نشد", {
+                    'new_records': 0, 
+                    'updated_records': 0, 
+                    'total_extracted': 0,
+                    'duplicates': [], 
+                    'warnings': []
+                }
             
-            # 🔍 تشخیص تغییرات (ردیف‌های حذف شده/جابجا شده)
+            total_rows = len(ready_rows)
+            self.logger.info(f"📥 {total_rows:,} ردیف آماده برای پردازش")
+            
+            if progress_callback:
+                progress_callback(20, 100, f"پردازش {total_rows:,} ردیف")
+            
+            # 🔍 تشخیص تغییرات
             from app.utils.change_detector import ChangeDetector
             from app.utils.unique_key_generator import generate_unique_key
             
             warnings = []
-            
-            # دریافت داده‌های قبلی از دیتابیس
             existing_data_list = db_manager.get_sales_data_by_sheet_config(sheet_config_id)
             
             if existing_data_list:

@@ -20,16 +20,236 @@ from app.utils.ui_constants import (
 
 
 class ExtractionThread(QThread):
-    """Thread برای استخراج داده"""
+    """Thread برای استخراج داده با لاگ دقیق و مدیریت خطا"""
     progress = pyqtSignal(int, str, str)  # (درصد, پیام, رنگ)
-    log = pyqtSignal(str)
+    log = pyqtSignal(str, str)  # (پیام, سطح: info/success/warning/error)
+    sub_progress = pyqtSignal(int, int, str)  # (فعلی, کل, پیام) برای نوار پیشرفت جزئی
     finished = pyqtSignal(bool, str, dict)
     
     def __init__(self, selected_sheet_ids=None):
         super().__init__()
         self.logger = app_logger
         self.extractor = GoogleSheetExtractor()
-        self.selected_sheet_ids = selected_sheet_ids  # لیست ID های شیت‌های انتخابی
+        self.selected_sheet_ids = selected_sheet_ids
+        self.is_cancelled = False
+    
+    def cancel(self):
+        """لغو عملیات"""
+        self.is_cancelled = True
+        self.log.emit("⚠️ در حال لغو عملیات...", "warning")
+    
+    def run(self):
+        """اجرای استخراج با لاگ کامل"""
+        try:
+            from datetime import datetime
+            start_time = datetime.now()
+            
+            self.progress.emit(5, "🚀 شروع عملیات استخراج...", "#2196F3")
+            self.log.emit("="*60, "info")
+            self.log.emit(f"🕐 زمان شروع: {start_time.strftime('%Y/%m/%d - %H:%M:%S')}", "info")
+            self.log.emit("="*60, "info")
+            
+            # دریافت شیت‌های فعال
+            self.progress.emit(10, "دریافت لیست شیت‌ها...", "#2196F3")
+            self.log.emit("\n🔍 دریافت لیست شیت‌های فعال از دیتابیس...", "info")
+            
+            all_configs = db_manager.get_all_sheet_configs(active_only=True)
+            
+            if not all_configs:
+                self.log.emit("❌ هیچ شیت فعالی یافت نشد!", "error")
+                self.finished.emit(False, "هیچ شیت فعالی یافت نشد!", {})
+                return
+            
+            self.log.emit(f"✅ {len(all_configs)} شیت فعال یافت شد", "success")
+            
+            # فیلتر کردن بر اساس انتخاب کاربر
+            if self.selected_sheet_ids:
+                configs = [c for c in all_configs if c.id in self.selected_sheet_ids]
+                if not configs:
+                    self.log.emit("❌ هیچ شیتی انتخاب نشده است!", "error")
+                    self.finished.emit(False, "هیچ شیتی انتخاب نشده است!", {})
+                    return
+                self.log.emit(f"📌 {len(configs)} شیت برای استخراج انتخاب شد", "info")
+            else:
+                configs = all_configs
+                self.log.emit(f"📌 استخراج از تمام {len(configs)} شیت فعال", "info")
+            
+            # آمارگیری کلی
+            total_new = 0
+            total_updated = 0
+            total_errors = 0
+            total_extracted_rows = 0
+            all_duplicates = []
+            
+            # استخراج از هر شیت
+            for idx, config in enumerate(configs):
+                if self.is_cancelled:
+                    self.log.emit("\n⛔ عملیات توسط کاربر لغو شد", "warning")
+                    break
+                
+                progress_pct = 10 + int((idx / len(configs)) * 85)
+                self.progress.emit(
+                    progress_pct,
+                    f"در حال استخراج از '{config.name}' ({idx+1}/{len(configs)})",
+                    "#4CAF50"
+                )
+                
+                self.log.emit("\n" + "─"*60, "info")
+                self.log.emit(f"📊 شیت {idx+1}/{len(configs)}: {config.name}", "info")
+                self.log.emit(f"🔗 URL: {config.sheet_url[:50]}...", "info")
+                self.log.emit(f"📄 Worksheet: {config.worksheet_name}", "info")
+                self.log.emit("─"*60, "info")
+                
+                try:
+                    # استخراج با callback برای گزارش پیشرفت
+                    def progress_callback(current, total, message):
+                        self.sub_progress.emit(current, total, message)
+                        if current % 100 == 0 or current == total:
+                            self.log.emit(f"  📥 استخراج: {current:,}/{total:,} - {message}", "info")
+                    
+                    success, message, stats = self.extractor.extract_and_save(
+                        config.id, 
+                        auto_update=False,
+                        progress_callback=progress_callback
+                    )
+                    
+                    if success:
+                        new = stats.get('new_records', 0)
+                        updated = stats.get('updated_records', 0)
+                        extracted = stats.get('total_extracted', 0)
+                        
+                        total_new += new
+                        total_updated += updated
+                        total_extracted_rows += extracted
+                        
+                        # گزارش تکراری‌ها
+                        duplicates = stats.get('duplicates', [])
+                        if duplicates:
+                            all_duplicates.extend(duplicates)
+                            self.log.emit(f"  ⚠️ {len(duplicates)} ردیف تکراری شناسایی شد", "warning")
+                        
+                        # گزارش علامت‌گذاری
+                        mark_stats = stats.get('mark_stats', {})
+                        if mark_stats:
+                            marked = mark_stats.get('success', 0)
+                            failed_mark = mark_stats.get('failed', 0)
+                            if failed_mark > 0:
+                                self.log.emit(f"  ⚠️ علامت‌گذاری: {marked:,} موفق، {failed_mark:,} ناموفق", "warning")
+                            else:
+                                self.log.emit(f"  ✅ علامت‌گذاری: {marked:,} ردیف", "success")
+                        
+                        self.log.emit(
+                            f"  ✅ نتیجه: {new:,} رکورد جدید، {updated:,} بروزرسانی، "
+                            f"{extracted:,} ردیف استخراج شد",
+                            "success"
+                        )
+                    else:
+                        total_errors += 1
+                        self.log.emit(f"  ❌ خطا: {message}", "error")
+                
+                except Exception as e:
+                    total_errors += 1
+                    self.log.emit(f"  ❌ خطای غیرمنتظره: {str(e)}", "error")
+                    self.logger.error(f"خطا در استخراج از {config.name}: {str(e)}")
+                    import traceback
+                    self.log.emit(f"  🔍 جزئیات: {traceback.format_exc()}", "error")
+            
+            # محاسبه زمان
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            
+            # خلاصه نهایی
+            self.progress.emit(100, "✅ تمام شد!", "#4CAF50")
+            
+            self.log.emit("\n" + "="*60, "info")
+            self.log.emit("🎯 خلاصه نتایج نهایی", "info")
+            self.log.emit("="*60, "info")
+            self.log.emit(f"⏱️  مدت زمان: {duration:.1f} ثانیه ({duration/60:.1f} دقیقه)", "info")
+            self.log.emit(f"📁 شیت‌های پردازش شده: {len(configs)}", "info")
+            self.log.emit(f"📥 ردیف‌های استخراج شده: {total_extracted_rows:,}", "success" if total_extracted_rows > 0 else "warning")
+            self.log.emit(f"➕ رکوردهای جدید: {total_new:,}", "success" if total_new > 0 else "info")
+            self.log.emit(f"🔄 رکوردهای بروز شده: {total_updated:,}", "info")
+            self.log.emit(f"⚠️  تکراری‌ها (نیاز به بررسی): {len(all_duplicates):,}", "warning" if len(all_duplicates) > 0 else "info")
+            self.log.emit(f"❌ خطاها: {total_errors}", "error" if total_errors > 0 else "success")
+            
+            # محاسبه سرعت
+            if duration > 0:
+                speed = total_extracted_rows / duration
+                self.log.emit(f"⚡ سرعت استخراج: {speed:.1f} ردیف/ثانیه", "info")
+            
+            self.log.emit("="*60, "info")
+            self.log.emit(f"🕐 زمان پایان: {end_time.strftime('%Y/%m/%d - %H:%M:%S')}", "info")
+            self.log.emit("="*60, "info")
+            
+            # ثبت در دیتابیس
+            summary = {
+                'total_configs': len(configs),
+                'new_records': total_new,
+                'updated_records': total_updated,
+                'total_extracted': total_extracted_rows,
+                'errors': total_errors,
+                'duplicates': all_duplicates,
+                'duration_seconds': duration
+            }
+            
+            self._save_process_log(configs, summary, start_time, end_time)
+            
+            # پیام نهایی
+            if total_errors == 0 and total_new + total_updated > 0:
+                final_msg = f"✅ استخراج موفق: {total_new:,} جدید، {total_updated:,} بروز شد"
+                self.finished.emit(True, final_msg, summary)
+            elif total_errors > 0:
+                final_msg = f"⚠️ استخراج با خطا: {total_errors} خطا، {total_new:,} جدید"
+                self.finished.emit(False, final_msg, summary)
+            else:
+                final_msg = "⚠️ هیچ رکورد جدیدی یافت نشد"
+                self.finished.emit(True, final_msg, summary)
+                
+        except Exception as e:
+            self.log.emit(f"\n❌❌❌ خطای کلی: {str(e)}", "error")
+            self.logger.error(f"خطای کلی در thread استخراج: {str(e)}")
+            import traceback
+            self.log.emit(f"🔍 Traceback:\n{traceback.format_exc()}", "error")
+            self.finished.emit(False, f"خطای کلی: {str(e)}", {})
+    
+    def _save_process_log(self, configs, summary, start_time, end_time):
+        """ذخیره لاگ عملیات در دیتابیس"""
+        try:
+            db = db_manager.get_session()
+            
+            # تعیین وضعیت
+            if summary['errors'] == 0 and summary['new_records'] + summary['updated_records'] > 0:
+                status = "SUCCESS"
+            elif summary['errors'] > 0 and summary['new_records'] + summary['updated_records'] > 0:
+                status = "PARTIAL"
+            elif summary['errors'] > 0:
+                status = "ERROR"
+            else:
+                status = "WARNING"
+            
+            # ساخت پیام
+            message = f"استخراج از {len(configs)} شیت: {summary['new_records']:,} جدید، {summary['updated_records']:,} بروز شد"
+            if len(summary['duplicates']) > 0:
+                message += f", {len(summary['duplicates'])} تکراری"
+            if summary['errors'] > 0:
+                message += f", {summary['errors']} خطا"
+            
+            process_log = ProcessLog(
+                process_type="EXTRACTION",
+                status=status,
+                message=message,
+                started_at=start_time,
+                completed_at=end_time,
+                details=summary
+            )
+            db.add(process_log)
+            db.commit()
+            log_id = process_log.id
+            db.close()
+            
+            self.log.emit(f"✅ لاگ عملیات در دیتابیس ثبت شد (ID: {log_id})", "success")
+        except Exception as e:
+            self.log.emit(f"⚠️ خطا در ثبت لاگ: {str(e)}", "warning")
     
     def run(self):
         """اجرای استخراج"""
@@ -580,20 +800,46 @@ class ExtractionWidget(QWidget):
         # اتصال سیگنال‌ها
         self.extraction_thread.progress.connect(self.on_progress)
         self.extraction_thread.log.connect(self.on_log)
+        self.extraction_thread.sub_progress.connect(self.on_sub_progress)
         self.extraction_thread.finished.connect(self.on_finished)
         
         # شروع
         self.extraction_thread.start()
     
     def on_progress(self, value, message, color):
-        """بروزرسانی پیشرفت"""
+        """بروزرسانی پیشرفت اصلی"""
         self.progress_bar.setValue(value)
         self.status_label.setText(message)
         self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {color};")
     
-    def on_log(self, message):
-        """افزودن لاگ"""
-        self.log_text.append(message)
+    def on_sub_progress(self, current, total, message):
+        """بروزرسانی پیشرفت جزئی (برای نمایش در status)"""
+        if total > 0:
+            percentage = int((current / total) * 100)
+            self.status_label.setText(f"{message} ({current:,}/{total:,} - {percentage}%)")
+    
+    def on_log(self, message, level="info"):
+        """
+        افزودن لاگ با رنگ‌بندی بر اساس سطح
+        
+        Args:
+            message: متن پیام
+            level: سطح (info, success, warning, error)
+        """
+        # تعیین رنگ بر اساس سطح
+        colors = {
+            'info': '#00E5FF',      # آبی روشن
+            'success': '#00FF41',   # سبز روشن
+            'warning': '#FFC107',   # نارنجی/زرد
+            'error': '#FF1744',     # قرمز
+        }
+        
+        color = colors.get(level, '#00E5FF')
+        
+        # افزودن HTML با رنگ
+        html = f'<span style="color: {color}; font-family: Tahoma, Consolas; font-size: 9pt;">{message}</span>'
+        self.log_text.append(html)
+        
         # اسکرول به انتها
         self.log_text.verticalScrollBar().setValue(
             self.log_text.verticalScrollBar().maximum()
