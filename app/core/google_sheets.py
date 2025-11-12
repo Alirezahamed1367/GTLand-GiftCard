@@ -293,10 +293,33 @@ class GoogleSheetExtractor:
             
             # اتصال به شیت
             sheet = self.client.open_by_url(sheet_url)
-            worksheet = sheet.worksheet(worksheet_name) if worksheet_name else sheet.sheet1
+            
+            # جستجوی case-insensitive برای worksheet (مشابه extract_ready_rows)
+            if worksheet_name:
+                matching_ws = None
+                all_worksheets = [ws.title for ws in sheet.worksheets()]
+                
+                for ws in sheet.worksheets():
+                    if ws.title.lower() == worksheet_name.lower():
+                        matching_ws = ws
+                        break
+                
+                if matching_ws:
+                    worksheet = matching_ws
+                    if matching_ws.title != worksheet_name:
+                        self.logger.info(f"📋 Worksheet واقعی: '{matching_ws.title}' (از تنظیمات: '{worksheet_name}')")
+                else:
+                    self.logger.error(f"❌ Worksheet '{worksheet_name}' یافت نشد. موجود: {all_worksheets}")
+                    return False, f"Worksheet '{worksheet_name}' یافت نشد", {}
+            else:
+                worksheet = sheet.sheet1
             
             # پیدا کردن ایندکس ستون با منطق جدید
             headers = worksheet.row_values(1)
+            
+            # پاک‌سازی هدرها: حذف علامت تیک و فضای خالی
+            headers = [str(h).strip().replace('✓', '').replace('✔', '').replace('☑', '').replace('✅', '').strip() for h in headers]
+            
             extracted_col_idx = -1
             extracted_column_clean = extracted_column.strip().lower()
             
@@ -304,19 +327,23 @@ class GoogleSheetExtractor:
             for idx, header in enumerate(headers):
                 if str(header).strip().lower() == extracted_column_clean:
                     extracted_col_idx = idx + 1  # +1 برای gspread (1-indexed)
+                    self.logger.info(f"✅ ستون استخراج پیدا شد: '{header}' (index {extracted_col_idx})")
                     break
             
             # اگر نیافت، شاید حرف ستون باشد
             if extracted_col_idx == -1 and len(extracted_column) <= 3 and extracted_column.isalpha():
                 try:
                     extracted_col_idx = column_letter_to_index(extracted_column) + 1
+                    self.logger.info(f"✅ ستون استخراج از طریق حرف: {extracted_column} (index {extracted_col_idx})")
                 except:
                     pass
             
             if extracted_col_idx == -1:
+                self.logger.error(f"❌ ستون '{extracted_column}' یافت نشد!")
+                self.logger.error(f"📋 هدرهای پاک شده: {headers}")
                 return False, f"ستون '{extracted_column}' یافت نشد", {}
             
-            self.logger.info(f"✅ ستون استخراج: index {extracted_col_idx}")
+            self.logger.info(f"🎯 شروع علامت‌گذاری در ستون index {extracted_col_idx}")
             
             # تقسیم به بچ‌های کوچک برای جلوگیری از timeout
             BATCH_SIZE = 500  # تعداد رکورد در هر بچ
@@ -610,19 +637,46 @@ class GoogleSheetExtractor:
                     rows_to_mark.append(row['row_number'])
             
             # علامت‌گذاری همه ردیف‌ها به صورت یکجا (Batch Update)
+            mark_stats = {}
             if rows_to_mark:
-                self.logger.info(f"🔄 در حال علامت‌گذاری {len(rows_to_mark)} ردیف...")
-                self.mark_rows_as_extracted(
+                msg = f"🔄 در حال علامت‌گذاری {len(rows_to_mark):,} ردیف در ستون Extracted..."
+                self.logger.info(msg)
+                if log_callback:
+                    log_callback(msg, "info")
+                
+                # callback برای پیشرفت علامت‌گذاری
+                def mark_progress_callback(current, total, message):
+                    if progress_callback:
+                        progress_callback(80 + int((current / total) * 15), 100, message)
+                
+                success, mark_msg, mark_stats = self.mark_rows_as_extracted(
                     sheet_config.sheet_url,
                     sheet_config.worksheet_name or 'Sheet1',
                     rows_to_mark,
-                    sheet_config.extracted_column
+                    sheet_config.extracted_column,
+                    progress_callback=mark_progress_callback
                 )
+                
+                if success:
+                    msg = f"✅ علامت‌گذاری تکمیل شد: {mark_stats.get('success', 0):,} ردیف"
+                    self.logger.success(msg)
+                    if log_callback:
+                        log_callback(msg, "success")
+                else:
+                    msg = f"⚠️ علامت‌گذاری با خطا: {mark_msg}"
+                    self.logger.warning(msg)
+                    if log_callback:
+                        log_callback(msg, "warning")
+            
+            if progress_callback:
+                progress_callback(100, 100, "✅ تمام شد!")
             
             stats = {
                 'new_records': new_count,
                 'updated_records': updated_count,
                 'total_rows': len(ready_rows),
+                'total_extracted': len(rows_to_mark),
+                'mark_stats': mark_stats,
                 'duplicates': duplicate_list,  # لیست تکراری‌ها
                 'warnings': warnings  # هشدارهای تغییرات
             }
