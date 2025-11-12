@@ -664,7 +664,7 @@ class SettingsDialog(QDialog):
         from datetime import datetime
         from pathlib import Path
         
-        # دیالوگ تایید شدید
+        # دیالوگ تایید (فقط یک بار)
         reply = QMessageBox.warning(
             self,
             "⚠️⚠️⚠️ هشدار شدید",
@@ -673,27 +673,15 @@ class SettingsDialog(QDialog):
             "🗑️ تمام لاگ عملیات را حذف می‌کند\n"
             "🗑️ تمام لاگ Export را حذف می‌کند\n"
             "📊 تمام آمارها را صفر می‌کند\n\n"
-            "⚠️⚠️⚠️ بدون ایجاد آرشیو!\n"
-            "⚠️⚠️⚠️ این عملیات قابل بازگشت نیست!\n\n"
-            "آیا مطمئن هستید؟",
+            "⚠️ بدون ایجاد آرشیو!\n"
+            "⚠️ این عملیات قابل بازگشت نیست!\n\n"
+            "💾 یک پشتیبان اضطراری ایجاد می‌شود.\n\n"
+            "آیا مطمئن هستید که می‌خواهید ادامه دهید؟",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            return
-        
-        # تایید مجدد
-        reply2 = QMessageBox.critical(
-            self,
-            "⛔ تایید نهایی",
-            "آیا کاملاً مطمئن هستید؟\n\n"
-            "تمام داده‌ها برای همیشه حذف می‌شوند!",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply2 != QMessageBox.StandardButton.Yes:
             return
         
         try:
@@ -746,6 +734,10 @@ class SettingsDialog(QDialog):
                 f"💾 پشتیبان اضطراری: {backup_file.name}\n\n"
                 f"✅ آمارها صفر شدند"
             )
+            
+            # اطلاع به پنل اصلی برای بروزرسانی
+            if hasattr(self.parent(), 'refresh_all_stats'):
+                self.parent().refresh_all_stats()
             
         except Exception as e:
             self.logger.error(f"خطا در خالی کردن: {str(e)}")

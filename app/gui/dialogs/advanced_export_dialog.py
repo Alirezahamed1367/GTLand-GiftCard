@@ -73,7 +73,7 @@ class AdvancedExportDialog(QDialog):
     
     def __init__(self, parent=None, sheet_config=None, selected_data_ids=None):
         super().__init__(parent)
-        self.sheet_config = sheet_config  # اگر از یک شیت خاص باشد
+        self.sheet_config = sheet_config  # اگر از یک شیت خاص باشد (deprecated)
         self.selected_data_ids = selected_data_ids  # داده‌های انتخابی (اگر باشد)
         self.selected_template = None
         self.output_path = None
@@ -81,7 +81,6 @@ class AdvancedExportDialog(QDialog):
         
         self.init_ui()
         self.load_templates()
-        self.load_sheet_configs()  # بارگذاری لیست شیت‌ها
     
     def init_ui(self):
         """راه‌اندازی رابط کاربری"""
@@ -123,17 +122,21 @@ class AdvancedExportDialog(QDialog):
         template_group.setLayout(template_layout)
         layout.addWidget(template_group)
         
-        # فیلتر شیت (جدید!)
-        sheet_group = QGroupBox("📋 انتخاب شیت(ها)")
+        # حذف شد: انتخاب شیت (چون Template مشخص می‌کند)
+        # به جای آن، نمایش شیت‌های Template
+        sheet_group = QGroupBox("📋 شیت‌های منبع داده")
         sheet_layout = QVBoxLayout()
         
-        self.sheet_combo = QComboBox()
-        self.sheet_combo.currentIndexChanged.connect(self.update_data_count)
-        sheet_layout.addWidget(self.sheet_combo)
-        
-        sheet_info = QLabel("💡 می‌توانید از یک یا چند شیت Export بگیرید")
-        sheet_info.setStyleSheet("color: #666; font-size: 8pt; padding: 5px;")
-        sheet_layout.addWidget(sheet_info)
+        self.sheet_info_label = QLabel("⏳ لطفاً ابتدا یک Template انتخاب کنید")
+        self.sheet_info_label.setStyleSheet("""
+            background: #E3F2FD;
+            padding: 10px;
+            border-radius: 5px;
+            color: #1976D2;
+            font-size: 10pt;
+        """)
+        self.sheet_info_label.setWordWrap(True)
+        sheet_layout.addWidget(self.sheet_info_label)
         
         sheet_group.setLayout(sheet_layout)
         layout.addWidget(sheet_group)
@@ -242,33 +245,8 @@ class AdvancedExportDialog(QDialog):
         except Exception as e:
             app_logger.error(f"خطا در بارگذاری Template ها: {str(e)}")
     
-    def load_sheet_configs(self):
-        """بارگذاری لیست SheetConfig ها"""
-        try:
-            configs = db_manager.get_all_sheet_configs()
-            
-            self.sheet_combo.clear()
-            self.sheet_combo.addItem("همه شیت‌ها", None)
-            
-            for config in configs:
-                self.sheet_combo.addItem(
-                    f"📊 {config.name}",
-                    config.id
-                )
-            
-            # اگر از قبل یک شیت انتخاب شده بود
-            if self.sheet_config:
-                for i in range(self.sheet_combo.count()):
-                    if self.sheet_combo.itemData(i) == self.sheet_config.id:
-                        self.sheet_combo.setCurrentIndex(i)
-                        break
-                        
-        except Exception as e:
-            app_logger.error(f"خطا در بارگذاری SheetConfig ها: {str(e)}")
-
-    
     def on_template_changed(self, index):
-        """تغییر Template"""
+        """تغییر Template - نمایش شیت‌های مرتبط"""
         template = self.template_combo.currentData()
         
         if template:
@@ -279,30 +257,108 @@ class AdvancedExportDialog(QDialog):
             if template.column_mappings and isinstance(template.column_mappings, (dict, list)):
                 mapping_count = len(template.column_mappings)
             
+            # نمایش اطلاعات Template
             info = f"""
 📋 نام: {template.name}
-📄 Worksheet: {template.target_worksheet}
+� نوع: {template.template_type}
+�📄 Worksheet: {template.target_worksheet}
 📍 شروع: سطر {template.start_row}, ستون {template.start_column}
 🗺️ تعداد Mapping: {mapping_count} ستون
             """
             self.template_info_label.setText(info.strip())
             
+            # استخراج و نمایش شیت‌های منبع داده از Template
+            source_sheet_ids = self.extract_source_sheets_from_template(template)
+            
+            if source_sheet_ids:
+                sheets_text = "📊 داده از این شیت‌ها استخراج می‌شود:\n\n"
+                sheet_names = []
+                for sheet_id in source_sheet_ids:
+                    config = db_manager.get_sheet_config(sheet_id)
+                    if config:
+                        sheets_text += f"  ✓ {config.name}\n"
+                        sheet_names.append(config.name)
+                    else:
+                        sheets_text += f"  ⚠️ شیت #{sheet_id} (حذف شده)\n"
+                
+                sheets_text += f"\n💡 {len(source_sheet_ids)} شیت در Template تعریف شده است"
+                self.sheet_info_label.setText(sheets_text)
+                self.sheet_info_label.setStyleSheet("""
+                    background: #E8F5E9;
+                    padding: 10px;
+                    border-radius: 5px;
+                    color: #2E7D32;
+                    font-size: 10pt;
+                    border-left: 4px solid #4CAF50;
+                """)
+            else:
+                self.sheet_info_label.setText("⚠️ این Template هنوز شیت منبع ندارد")
+                self.sheet_info_label.setStyleSheet("""
+                    background: #FFF3E0;
+                    padding: 10px;
+                    border-radius: 5px;
+                    color: #E65100;
+                    font-size: 10pt;
+                    border-left: 4px solid #FF9800;
+                """)
+            
             # پیشنهاد نام فایل
             if not self.output_path:
                 suggested_name = excel_exporter.generate_output_filename(
                     template,
-                    self.sheet_config.name if self.sheet_config else ""
+                    ""  # نام شیت دیگر استفاده نمی‌شود
                 )
                 self.output_path_label.setText(suggested_name)
         else:
             self.selected_template = None
             self.template_info_label.setText("هیچ Template فعالی وجود ندارد")
+            self.sheet_info_label.setText("⏳ لطفاً ابتدا یک Template انتخاب کنید")
+        
+        self.update_data_count()
+    
+    def extract_source_sheets_from_template(self, template):
+        """استخراج ID های شیت‌های منبع از column_mappings"""
+        source_sheet_ids = set()
+        
+        try:
+            if not template.column_mappings:
+                return []
+            
+            mappings = template.column_mappings
+            if isinstance(mappings, str):
+                import json
+                mappings = json.loads(mappings)
+            
+            # اگر dict است (فرمت: {"A": {"source_sheet": 2, ...}, ...})
+            if isinstance(mappings, dict):
+                for mapping in mappings.values():
+                    if isinstance(mapping, dict) and 'source_sheet' in mapping:
+                        sheet_id = mapping['source_sheet']
+                        # تبدیل به int در صورت لزوم
+                        if isinstance(sheet_id, (int, float)):
+                            source_sheet_ids.add(int(sheet_id))
+                        elif isinstance(sheet_id, str) and sheet_id.isdigit():
+                            source_sheet_ids.add(int(sheet_id))
+            # اگر list است (فرمت: [{"source_sheet": 2, ...}, ...])
+            elif isinstance(mappings, list):
+                for mapping in mappings:
+                    if isinstance(mapping, dict) and 'source_sheet' in mapping:
+                        sheet_id = mapping['source_sheet']
+                        if isinstance(sheet_id, (int, float)):
+                            source_sheet_ids.add(int(sheet_id))
+                        elif isinstance(sheet_id, str) and sheet_id.isdigit():
+                            source_sheet_ids.add(int(sheet_id))
+            
+            return sorted(list(source_sheet_ids))
+            
+        except Exception as e:
+            app_logger.error(f"خطا در استخراج شیت‌های منبع: {str(e)}")
+            return []
     
     def update_data_count(self):
-        """بروزرسانی تعداد داده‌ها با توجه به فیلتر SheetConfig"""
+        """بروزرسانی تعداد داده‌ها - فیلتر بر اساس شیت‌های Template"""
         try:
             filter_index = self.filter_combo.currentIndex()
-            selected_sheet_id = self.sheet_combo.currentData()
             
             # فعال/غیرفعال کردن محدوده
             self.limit_spin.setEnabled(filter_index == 3)
@@ -317,19 +373,33 @@ class AdvancedExportDialog(QDialog):
             else:  # محدوده سفارشی
                 data_list = db_manager.get_all_sales_data()[:self.limit_spin.value()]
             
-            # فیلتر بر اساس SheetConfig
-            if selected_sheet_id is not None:
-                data_list = [d for d in data_list if d.sheet_config_id == selected_sheet_id]
+            # فیلتر بر اساس شیت‌های Template
+            selected_template = self.template_combo.currentData()
+            if selected_template:
+                # دریافت ID های شیت‌های منبع از Template
+                source_sheet_ids = self.extract_source_sheets_from_template(selected_template)
+                
+                if source_sheet_ids:
+                    # فیلتر داده‌ها فقط از شیت‌های Template
+                    data_list = [d for d in data_list if d.sheet_config_id in source_sheet_ids]
+                    
+                    # دریافت نام شیت‌ها برای نمایش
+                    sheet_names = []
+                    for sheet_id in source_sheet_ids:
+                        config = db_manager.get_sheet_config(sheet_id)
+                        if config:
+                            sheet_names.append(config.name)
             
             count = len(data_list)
             
             # نمایش با جزئیات
-            if selected_sheet_id:
-                config = db_manager.get_sheet_config(selected_sheet_id)
-                sheet_name = config.name if config else "نامشخص"
-                self.data_count_label.setText(f"{count:,} رکورد از '{sheet_name}'")
+            if selected_template and source_sheet_ids:
+                if len(source_sheet_ids) == 1 and sheet_names:
+                    self.data_count_label.setText(f"{count:,} رکورد از '{sheet_names[0]}'")
+                else:
+                    self.data_count_label.setText(f"{count:,} رکورد از {len(source_sheet_ids)} شیت")
             else:
-                self.data_count_label.setText(f"{count:,} رکورد (همه شیت‌ها)")
+                self.data_count_label.setText(f"{count:,} رکورد")
             
         except Exception as e:
             app_logger.error(f"خطا در شمارش: {str(e)}")
@@ -378,7 +448,6 @@ class AdvancedExportDialog(QDialog):
         try:
             # دریافت داده‌ها بر اساس فیلتر
             filter_index = self.filter_combo.currentIndex()
-            selected_sheet_id = self.sheet_combo.currentData()
             
             if filter_index == 0:  # فقط جدید
                 data_list = db_manager.get_sales_data_by_export_status(is_exported=False)
@@ -400,14 +469,25 @@ class AdvancedExportDialog(QDialog):
             else:  # محدوده سفارشی
                 data_list = db_manager.get_all_sales_data()[:self.limit_spin.value()]
             
-            # فیلتر بر اساس SheetConfig انتخابی
-            if selected_sheet_id is not None:
-                data_list = [d for d in data_list if d.sheet_config_id == selected_sheet_id]
+            # فیلتر بر اساس شیت‌های Template
+            source_sheet_ids = self.extract_source_sheets_from_template(self.selected_template)
+            
+            if source_sheet_ids:
+                # فیلتر داده‌ها فقط از شیت‌های Template
+                data_list = [d for d in data_list if d.sheet_config_id in source_sheet_ids]
+                
+                # دریافت نام شیت‌ها برای لاگ
+                sheet_names = []
+                for sheet_id in source_sheet_ids:
+                    config = db_manager.get_sheet_config(sheet_id)
+                    if config:
+                        sheet_names.append(config.name)
                 
                 # اطلاع به کاربر
-                config = db_manager.get_sheet_config(selected_sheet_id)
-                sheet_name = config.name if config else "نامشخص"
-                app_logger.info(f"Export فقط از شیت '{sheet_name}' ({len(data_list)} رکورد)")
+                if len(sheet_names) == 1:
+                    app_logger.info(f"Export فقط از شیت '{sheet_names[0]}' ({len(data_list)} رکورد)")
+                else:
+                    app_logger.info(f"Export از {len(sheet_names)} شیت: {', '.join(sheet_names)} ({len(data_list)} رکورد)")
             
             if not data_list:
                 QMessageBox.information(self, "اطلاع", "هیچ داده‌ای برای Export یافت نشد!")

@@ -3,7 +3,8 @@
 """
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QMessageBox, QProgressBar, QTextEdit, QGroupBox
+    QLabel, QMessageBox, QProgressBar, QTextEdit, QGroupBox,
+    QCheckBox, QScrollArea, QGridLayout
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -11,6 +12,7 @@ from PyQt6.QtGui import QFont
 from app.core.database import db_manager
 from app.core.google_sheets import GoogleSheetExtractor
 from app.core.logger import app_logger
+from app.models import ProcessLog
 from app.utils.ui_constants import (
     FONT_SIZE_SECTION, BUTTON_HEIGHT_LARGE, COLOR_PRIMARY, 
     COLOR_SUCCESS, get_button_style
@@ -23,25 +25,35 @@ class ExtractionThread(QThread):
     log = pyqtSignal(str)
     finished = pyqtSignal(bool, str, dict)
     
-    def __init__(self):
+    def __init__(self, selected_sheet_ids=None):
         super().__init__()
         self.logger = app_logger
         self.extractor = GoogleSheetExtractor()
+        self.selected_sheet_ids = selected_sheet_ids  # لیست ID های شیت‌های انتخابی
     
     def run(self):
         """اجرای استخراج"""
         try:
             self.progress.emit(10, "دریافت لیست شیت‌ها...", "#2196F3")
-            self.log.emit("🔍 دریافت لیست شیت‌های فعال...")
+            self.log.emit("🔍 دریافت لیست شیت‌های انتخابی...")
             
             # دریافت شیت‌های فعال
-            configs = db_manager.get_all_sheet_configs(active_only=True)
+            all_configs = db_manager.get_all_sheet_configs(active_only=True)
             
-            if not configs:
+            if not all_configs:
                 self.finished.emit(False, "هیچ شیت فعالی یافت نشد!", {})
                 return
             
-            self.log.emit(f"✅ تعداد {len(configs)} شیت فعال یافت شد")
+            # فیلتر کردن بر اساس انتخاب کاربر
+            if self.selected_sheet_ids:
+                configs = [c for c in all_configs if c.id in self.selected_sheet_ids]
+                if not configs:
+                    self.finished.emit(False, "هیچ شیتی انتخاب نشده است!", {})
+                    return
+                self.log.emit(f"✅ تعداد {len(configs)} شیت انتخاب شده از {len(all_configs)} شیت فعال")
+            else:
+                configs = all_configs
+                self.log.emit(f"✅ استخراج از همه شیت‌های فعال ({len(configs)} شیت)")
             
             total_new = 0
             total_updated = 0
@@ -105,6 +117,39 @@ class ExtractionThread(QThread):
             self.log.emit(f"  • خطاها: {total_errors}")
             self.log.emit("="*50)
             
+            # ثبت لاگ عملیات
+            try:
+                from datetime import datetime
+                db = db_manager.get_session()
+                
+                status = "SUCCESS" if (total_new > 0 or total_updated > 0) and total_errors == 0 else "PARTIAL" if total_errors > 0 else "WARNING"
+                message = f"استخراج از {len(configs)} شیت: {total_new} جدید، {total_updated} بروز شد"
+                if len(all_duplicates) > 0:
+                    message += f", {len(all_duplicates)} تکراری"
+                if total_errors > 0:
+                    message += f", {total_errors} خطا"
+                
+                process_log = ProcessLog(
+                    process_type="EXTRACTION",
+                    status=status,
+                    message=message,
+                    started_at=datetime.now(),
+                    completed_at=datetime.now(),
+                    details={
+                        'total_configs': len(configs),
+                        'new_records': total_new,
+                        'updated_records': total_updated,
+                        'duplicates': len(all_duplicates),
+                        'errors': total_errors
+                    }
+                )
+                db.add(process_log)
+                db.commit()
+                db.close()
+                self.log.emit(f"✅ لاگ عملیات ثبت شد (ID: {process_log.id})")
+            except Exception as log_error:
+                self.log.emit(f"⚠️ خطا در ثبت لاگ: {log_error}")
+            
             if total_new > 0 or total_updated > 0 or all_duplicates:
                 msg = f"✅ استخراج موفق!\n{total_new:,} رکورد جدید، {total_updated:,} بروز شد"
                 if all_duplicates:
@@ -129,108 +174,348 @@ class ExtractionWidget(QWidget):
         super().__init__(parent)
         self.logger = app_logger
         self.extraction_thread = None
+        self.parent_window = parent
         self.init_ui()
+    
+    def showEvent(self, event):
+        """هنگام نمایش widget، لیست را refresh کن"""
+        super().showEvent(event)
+        self.refresh_data()
+    
+    def refresh_data(self):
+        """بروزرسانی آمار و لیست شیت‌ها"""
+        self.load_stats()
+        self.load_sheets_list()
     
     def init_ui(self):
         """راه‌اندازی رابط کاربری"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)
+        
+        # هدر: عنوان + آمار در یک خط افقی - بدون فضای اضافی
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(15)
         
         # عنوان
         title = QLabel("📥 استخراج داده از Google Sheets")
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
         title.setStyleSheet("color: #2196F3;")
-        layout.addWidget(title)
+        header_layout.addWidget(title)
         
-        # آمار
-        stats_group = QGroupBox("📊 آمار فعلی")
-        stats_layout = QVBoxLayout()
+        # جداکننده عمودی
+        separator = QLabel("│")
+        separator.setFont(QFont("Segoe UI", 14))
+        separator.setStyleSheet("color: #90caf9;")
+        header_layout.addWidget(separator)
         
-        self.stats_label = QLabel("در حال بارگذاری...")
+        # آمار در یک خط - جذاب و رنگی
+        self.stats_label = QLabel("⏳ در حال بارگذاری آمار...")
+        self.stats_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self.stats_label.setStyleSheet("""
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 5px;
-            font-weight: bold;
-            font-size: 11pt;
+            QLabel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #e3f2fd, stop:1 #bbdefb);
+                padding: 10px 20px;
+                border-radius: 6px;
+                color: #1565c0;
+                border: 2px solid #90caf9;
+            }
         """)
-        stats_layout.addWidget(self.stats_label)
+        header_layout.addWidget(self.stats_label, 1)  # stretch factor = 1
         
-        stats_group.setLayout(stats_layout)
-        layout.addWidget(stats_group)
+        layout.addLayout(header_layout)
         
-        # دکمه شروع
+        # انتخاب شیت‌ها - Grid 3 ستونی با checkbox های بزرگ‌تر
+        sheets_group = QGroupBox("📋 انتخاب شیت‌ها برای استخراج")
+        sheets_group.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        sheets_group.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #fafafa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+                color: #333;
+            }
+        """)
+        sheets_layout = QVBoxLayout()
+        sheets_layout.setContentsMargins(12, 12, 12, 12)
+        sheets_layout.setSpacing(8)
+        
+        # دکمه‌های انتخاب سریع
+        quick_select_layout = QHBoxLayout()
+        quick_select_layout.setSpacing(8)
+        
+        select_all_btn = QPushButton("✓ انتخاب همه")
+        select_all_btn.setFixedHeight(32)
+        select_all_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        select_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 6px 15px;
+            }
+            QPushButton:hover { background-color: #45a049; }
+            QPushButton:pressed { background-color: #388E3C; }
+        """)
+        select_all_btn.clicked.connect(self.select_all_sheets)
+        quick_select_layout.addWidget(select_all_btn)
+        
+        deselect_all_btn = QPushButton("✗ لغو همه")
+        deselect_all_btn.setFixedHeight(32)
+        deselect_all_btn.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        deselect_all_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                padding: 6px 15px;
+            }
+            QPushButton:hover { background-color: #616161; }
+            QPushButton:pressed { background-color: #424242; }
+        """)
+        deselect_all_btn.clicked.connect(self.deselect_all_sheets)
+        quick_select_layout.addWidget(deselect_all_btn)
+        quick_select_layout.addStretch()
+        
+        sheets_layout.addLayout(quick_select_layout)
+        
+        # Scroll Area با Grid 3 ستونی
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                background-color: white;
+            }
+        """)
+        
+        scroll_container = QWidget()
+        self.sheets_grid = QGridLayout(scroll_container)
+        self.sheets_grid.setSpacing(8)
+        self.sheets_grid.setContentsMargins(10, 10, 10, 10)
+        
+        scroll_area.setWidget(scroll_container)
+        scroll_area.setMinimumHeight(120)
+        sheets_layout.addWidget(scroll_area)
+        
+        self.sheet_checkboxes = {}
+        
+        sheets_group.setLayout(sheets_layout)
+        layout.addWidget(sheets_group, 3)  # بیشترین stretch
+        
+        # دکمه شروع + پیشرفت در یک ردیف
+        action_layout = QHBoxLayout()
+        action_layout.setSpacing(8)
+        
         self.start_btn = QPushButton("▶️ شروع استخراج")
-        self.start_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
-        self.start_btn.setStyleSheet(get_button_style(COLOR_SUCCESS, 14, BUTTON_HEIGHT_LARGE))
+        self.start_btn.setFixedHeight(36)
+        self.start_btn.setMinimumWidth(120)
+        self.start_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-size: 10pt;
+                font-weight: bold;
+                border: none;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #45a049; }
+            QPushButton:pressed { background-color: #388E3C; }
+            QPushButton:disabled {
+                background-color: #BDBDBD;
+                color: #757575;
+            }
+        """)
         self.start_btn.clicked.connect(self.start_extraction)
-        layout.addWidget(self.start_btn)
+        action_layout.addWidget(self.start_btn)
         
-        # نوار پیشرفت
-        progress_group = QGroupBox("⏳ پیشرفت")
-        progress_layout = QVBoxLayout()
+        # پیشرفت با نوار بزرگ‌تر و فونت درشت‌تر
+        progress_container = QVBoxLayout()
+        progress_container.setSpacing(4)
         
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setFixedHeight(24)  # نوار بزرگ‌تر
         self.progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #e0e0e0;
-                border-radius: 5px;
+                border: 2px solid #ddd;
+                border-radius: 6px;
                 text-align: center;
+                font-size: 10pt;
                 font-weight: bold;
-                height: 30px;
+                background-color: #f5f5f5;
             }
             QProgressBar::chunk {
-                background-color: #4CAF50;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4CAF50, stop:1 #66BB6A);
+                border-radius: 4px;
             }
         """)
-        progress_layout.addWidget(self.progress_bar)
+        progress_container.addWidget(self.progress_bar)
         
         self.status_label = QLabel("آماده")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #666;")
-        progress_layout.addWidget(self.status_label)
+        self.status_label.setStyleSheet("font-size: 9pt; color: #666; font-weight: bold;")
+        progress_container.addWidget(self.status_label)
         
-        progress_group.setLayout(progress_layout)
-        layout.addWidget(progress_group)
+        action_layout.addLayout(progress_container, 1)
+        layout.addLayout(action_layout)
         
-        # لاگ
-        log_group = QGroupBox("📝 جزئیات")
+        # لاگ - مینیمال
+        log_group = QGroupBox("📝 لاگ عملیات")
+        log_group.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+        log_group.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #fafafa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 15px;
+                padding: 0 8px;
+                color: #333;
+            }
+        """)
         log_layout = QVBoxLayout()
+        log_layout.setContentsMargins(12, 12, 12, 12)
         
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(200)
+        self.log_text.setMinimumHeight(80)
+        self.log_text.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)  # Word wrap
+        self.log_text.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # بدون اسکرول افقی
+        self.log_text.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)  # فقط عمودی
         self.log_text.setStyleSheet("""
             QTextEdit {
                 background: #263238;
                 color: #00ff00;
-                font-family: 'Courier New';
+                font-family: 'Consolas', monospace;
                 font-size: 9pt;
                 border: 2px solid #37474F;
-                border-radius: 5px;
+                border-radius: 6px;
+                padding: 8px;
             }
         """)
         log_layout.addWidget(self.log_text)
         
         log_group.setLayout(log_layout)
-        layout.addWidget(log_group)
+        layout.addWidget(log_group, 1)  # کمترین stretch
         
-        # بارگذاری آمار
+        # بارگذاری آمار و شیت‌ها
         self.load_stats()
+        self.load_sheets_list()
+    
+    def load_sheets_list(self):
+        """بارگذاری Grid شیت‌ها با Checkboxes - همیشه 3 ستونی"""
+        try:
+            # پاک کردن Grid قبلی
+            for i in reversed(range(self.sheets_grid.count())):
+                widget = self.sheets_grid.itemAt(i).widget()
+                if widget:
+                    widget.deleteLater()
+            
+            self.sheet_checkboxes.clear()
+            
+            configs = db_manager.get_all_sheet_configs(active_only=True)
+            
+            if not configs:
+                label = QLabel("⚠️ هیچ شیت فعالی یافت نشد")
+                label.setStyleSheet("color: #999; font-size: 10pt; padding: 20px;")
+                label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.sheets_grid.addWidget(label, 0, 0, 1, 3)
+                return
+            
+            # همیشه 3 ستون (مطابق درخواست کاربر)
+            num_columns = 3
+            
+            # افزودن Checkboxes به Grid با فونت بزرگ‌تر
+            for idx, config in enumerate(configs):
+                row = idx // num_columns
+                col = idx % num_columns
+                
+                checkbox = QCheckBox(f"📊 {config.name}")
+                checkbox.setStyleSheet("""
+                    QCheckBox {
+                        font-size: 10pt;
+                        padding: 5px 8px;
+                        background-color: #f9f9f9;
+                        border: 1px solid #e0e0e0;
+                        border-radius: 4px;
+                    }
+                    QCheckBox:hover {
+                        background-color: #E8F5E9;
+                        border: 1px solid #A5D6A7;
+                    }
+                    QCheckBox::indicator {
+                        width: 16px;
+                        height: 16px;
+                        border: 1px solid #bbb;
+                        border-radius: 2px;
+                        background-color: white;
+                    }
+                    QCheckBox::indicator:hover {
+                        border: 1px solid #4CAF50;
+                    }
+                    QCheckBox::indicator:checked {
+                        background-color: #4CAF50;
+                        border: 1px solid #388E3C;
+                    }
+                """)
+                checkbox.setChecked(True)
+                
+                self.sheet_checkboxes[config.id] = checkbox
+                self.sheets_grid.addWidget(checkbox, row, col)
+            
+            # اضافه کردن spacer در انتها برای چیدمان بهتر
+            self.sheets_grid.setRowStretch(len(configs) // num_columns + 1, 1)
+            
+        except Exception as e:
+            self.logger.error(f"خطا در بارگذاری لیست شیت‌ها: {e}")
+    
+    def select_all_sheets(self):
+        """انتخاب همه Checkboxها"""
+        for checkbox in self.sheet_checkboxes.values():
+            checkbox.setChecked(True)
+    
+    def deselect_all_sheets(self):
+        """لغو انتخاب همه Checkboxها"""
+        for checkbox in self.sheet_checkboxes.values():
+            checkbox.setChecked(False)
+    
+    def get_selected_sheet_ids(self):
+        """دریافت ID های شیت‌های انتخاب شده"""
+        selected_ids = []
+        for sheet_id, checkbox in self.sheet_checkboxes.items():
+            if checkbox.isChecked():
+                selected_ids.append(sheet_id)
+        return selected_ids
     
     def load_stats(self):
-        """بارگذاری آمار"""
+        """بارگذاری آمار - در یک خط افقی با فاصله مناسب"""
         try:
             stats = db_manager.get_statistics()
             configs = db_manager.get_all_sheet_configs(active_only=True)
             
+            # آمار در یک خط افقی با فاصله بیشتر بین آیتم‌ها
             self.stats_label.setText(
-                f"📋 شیت‌های فعال: {len(configs)}\n"
-                f"📦 کل رکوردها: {stats.get('total_records', 0):,}\n"
-                f"✅ خروجی گرفته شده: {stats.get('exported_records', 0):,}\n"
+                f"📋 شیت‌های فعال: {len(configs)}    •    "
+                f"📦 کل رکوردها: {stats.get('total_records', 0):,}    •    "
+                f"✅ خروجی گرفته شده: {stats.get('exported_records', 0):,}    •    "
                 f"⏳ در انتظار: {stats.get('pending_records', 0):,}"
             )
         except Exception as e:
@@ -250,11 +535,31 @@ class ExtractionWidget(QWidget):
             )
             return
         
+        # دریافت شیت‌های انتخابی
+        selected_sheet_ids = self.get_selected_sheet_ids()
+        
+        if not selected_sheet_ids:
+            QMessageBox.warning(
+                self,
+                "هشدار",
+                "⚠️ هیچ شیتی انتخاب نشده است!\n\n"
+                "لطفاً حداقل یک شیت را انتخاب کنید."
+            )
+            return
+        
         # تایید
+        selected_count = len(selected_sheet_ids)
+        total_count = len(configs)
+        
+        if selected_count == total_count:
+            confirm_msg = f"آیا می‌خواهید استخراج از همه شیت‌ها ({total_count} شیت) را شروع کنید؟"
+        else:
+            confirm_msg = f"آیا می‌خواهید استخراج از {selected_count} شیت انتخابی (از {total_count} شیت) را شروع کنید؟"
+        
         reply = QMessageBox.question(
             self,
             "تایید",
-            f"آیا می‌خواهید استخراج از {len(configs)} شیت را شروع کنید؟",
+            confirm_msg,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -269,8 +574,8 @@ class ExtractionWidget(QWidget):
         self.log_text.clear()
         self.progress_bar.setValue(0)
         
-        # ایجاد thread
-        self.extraction_thread = ExtractionThread()
+        # ایجاد thread با شیت‌های انتخابی
+        self.extraction_thread = ExtractionThread(selected_sheet_ids=selected_sheet_ids)
         
         # اتصال سیگنال‌ها
         self.extraction_thread.progress.connect(self.on_progress)

@@ -8,6 +8,7 @@ import time
 from app.core.logger import app_logger
 from app.utils.constants import ERROR_MESSAGES, SUCCESS_MESSAGES
 from app.utils.helpers import validate_google_sheet_url
+from app.utils.cell_status_detector import is_cell_checked, is_cell_extracted
 
 def column_letter_to_index(column_letter):
     column_letter = column_letter.upper().strip()
@@ -80,8 +81,32 @@ class GoogleSheetExtractor:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def extract_ready_rows(self, sheet_url, worksheet_name, ready_column, extracted_column, columns_to_extract=None, skip_rows=0, max_rows=None):
         try:
+            self.logger.info(f"📄 در حال باز کردن worksheet: '{worksheet_name}'")
             sheet = self.client.open_by_url(sheet_url)
-            worksheet = sheet.worksheet(worksheet_name) if worksheet_name else sheet.sheet1
+            
+            # لیست تمام worksheetها را لاگ کن
+            all_worksheets = [ws.title for ws in sheet.worksheets()]
+            self.logger.info(f"📋 لیست worksheetهای موجود: {all_worksheets}")
+            
+            # جستجوی case-insensitive برای worksheet
+            if worksheet_name:
+                # سعی کن نام دقیق را پیدا کنی
+                matching_ws = None
+                for ws in sheet.worksheets():
+                    if ws.title.lower() == worksheet_name.lower():
+                        matching_ws = ws
+                        break
+                
+                if matching_ws:
+                    worksheet = matching_ws
+                    if matching_ws.title != worksheet_name:
+                        self.logger.warning(f"⚠️ نام worksheet در دیتابیس '{worksheet_name}' با نام واقعی '{matching_ws.title}' متفاوت است")
+                else:
+                    raise Exception(f"Worksheet با نام '{worksheet_name}' یافت نشد. worksheetهای موجود: {all_worksheets}")
+            else:
+                worksheet = sheet.sheet1
+            
+            self.logger.info(f"✅ Worksheet '{worksheet.title}' باز شد")
             all_values = worksheet.get_all_values()
             if not all_values or len(all_values) < 2:
                 self.logger.warning("شیت خالی است یا فقط هدر دارد")
@@ -130,8 +155,12 @@ class GoogleSheetExtractor:
                     row_values.append("")
                 ready_value = row_values[ready_col_idx] if ready_col_idx < len(row_values) else ""
                 extracted_value = row_values[extracted_col_idx] if extracted_col_idx < len(row_values) else ""
-                is_ready = str(ready_value).strip().upper() in ["TRUE", "YES", "1"]
-                is_extracted = str(extracted_value).strip().upper() in ["TRUE", "YES", "1"]
+                
+                # استفاده از تشخیص هوشمند به جای چک ساده
+                # این قابلیت Checkbox, Dropdown, Text و Unicode را پشتیبانی می‌کند
+                is_ready = is_cell_checked(ready_value)
+                is_extracted = is_cell_extracted(extracted_value)
+                
                 if is_ready and not is_extracted:
                     row_data = {}
                     for idx, col_name in zip(col_indices, col_names):
@@ -140,14 +169,36 @@ class GoogleSheetExtractor:
             self.logger.success(f" {len(ready_rows)} ردیف آماده یافت شد")
             return ready_rows
         except Exception as e:
-            self.logger.error(f"خطا در استخراج: {str(e)}")
+            self.logger.error(f"خطا در استخراج از worksheet '{worksheet_name}': {str(e)}")
+            import traceback
+            self.logger.error(f"جزئیات خطا: {traceback.format_exc()}")
             return []
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def mark_as_extracted(self, sheet_url, worksheet_name, row_number, extracted_column):
+        """علامت‌گذاری یک ردیف - برای سازگاری با کدهای قدیمی"""
+        return self.mark_rows_as_extracted(sheet_url, worksheet_name, [row_number], extracted_column)
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def mark_rows_as_extracted(self, sheet_url, worksheet_name, row_numbers: List[int], extracted_column):
+        """
+        علامت‌گذاری چندین ردیف به صورت یکجا (Batch Update)
+        این روش تعداد API calls را کاهش می‌دهد و از Rate Limit جلوگیری می‌کند
+        
+        Args:
+            sheet_url: آدرس Google Sheet
+            worksheet_name: نام worksheet
+            row_numbers: لیست شماره ردیف‌ها
+            extracted_column: نام یا حرف ستون
+        """
         try:
+            if not row_numbers:
+                return True, "هیچ ردیفی برای علامت‌گذاری نیست"
+            
             sheet = self.client.open_by_url(sheet_url)
             worksheet = sheet.worksheet(worksheet_name) if worksheet_name else sheet.sheet1
+            
+            # پیدا کردن ایندکس ستون
             try:
                 col_index = column_letter_to_index(extracted_column) + 1
             except:
@@ -155,11 +206,20 @@ class GoogleSheetExtractor:
                 if extracted_column not in headers:
                     return False, "ستون یافت نشد"
                 col_index = headers.index(extracted_column) + 1
-            worksheet.update_cell(row_number, col_index, "TRUE")
-            time.sleep(0.5)
-            return True, "ردیف علامت‌گذاری شد"
+            
+            # ساخت لیست سلول‌ها برای batch update
+            cell_list = []
+            for row_num in row_numbers:
+                cell_list.append(gspread.Cell(row_num, col_index, "TRUE"))
+            
+            # یک بار update (به جای N بار!)
+            worksheet.update_cells(cell_list, value_input_option='USER_ENTERED')
+            # time.sleep(0.3)
+            self.logger.success(f"✅ {len(row_numbers)} ردیف به صورت batch علامت‌گذاری شد")
+            return True, f"{len(row_numbers)} ردیف علامت‌گذاری شد"
+            
         except Exception as e:
-            self.logger.error(f"خطا در علامت‌گذاری: {str(e)}")
+            self.logger.error(f"خطا در علامت‌گذاری batch: {str(e)}")
             return False, str(e)
     
     def extract_and_save(self, sheet_config_id: int, auto_update: bool = False) -> Tuple[bool, str, Dict]:
@@ -187,25 +247,59 @@ class GoogleSheetExtractor:
                 return False, "شیت غیرفعال است", {}
             
             # استخراج داده‌ها
+            # columns_to_extract قبلاً یک لیست است (JSON در دیتابیس)
             ready_rows = self.extract_ready_rows(
                 sheet_url=sheet_config.sheet_url,
                 worksheet_name=sheet_config.worksheet_name or 'Sheet1',
                 ready_column=sheet_config.ready_column,
                 extracted_column=sheet_config.extracted_column,
-                columns_to_extract=sheet_config.columns_to_extract.split(',') if sheet_config.columns_to_extract else None
+                columns_to_extract=sheet_config.columns_to_extract  # قبلاً لیست است
             )
             
             if not ready_rows:
-                return True, "هیچ ردیف آماده‌ای یافت نشد", {'new_records': 0, 'updated_records': 0, 'duplicates': []}
+                return True, "هیچ ردیف آماده‌ای یافت نشد", {'new_records': 0, 'updated_records': 0, 'duplicates': [], 'warnings': []}
+            
+            # 🔍 تشخیص تغییرات (ردیف‌های حذف شده/جابجا شده)
+            from app.utils.change_detector import ChangeDetector
+            from app.utils.unique_key_generator import generate_unique_key
+            
+            warnings = []
+            
+            # دریافت داده‌های قبلی از دیتابیس
+            existing_data_list = db_manager.get_sales_data_by_sheet_config(sheet_config_id)
+            
+            if existing_data_list:
+                detector = ChangeDetector()
+                old_data = [
+                    {'row_number': item.row_number, 'data': item.data}
+                    for item in existing_data_list
+                ]
+                changes, change_stats = detector.detect_changes(
+                    old_data,
+                    ready_rows,
+                    sheet_config.unique_key_columns
+                )
+                
+                # اگر ردیف حذف شده یا جابجا شده وجود دارد
+                if change_stats['deleted'] > 0 or change_stats['moved'] > 0:
+                    warning_report = detector.generate_warning_report(changes)
+                    warnings.append(warning_report)
+                    self.logger.warning(warning_report)
             
             # ذخیره در دیتابیس
             new_count = 0
             updated_count = 0
             duplicate_list = []  # لیست تکراری‌ها برای بررسی بعدی
+            rows_to_mark = []  # ردیف‌هایی که باید علامت بخورند
             
             for row in ready_rows:
-                # ایجاد unique key
-                unique_key = f"{sheet_config_id}_row_{row['row_number']}"
+                # ✨ ساخت کلید یکتا با سیستم جدید
+                unique_key = generate_unique_key(
+                    sheet_config_id=sheet_config_id,
+                    row_data=row['data'],
+                    unique_columns=sheet_config.unique_key_columns,
+                    row_number=row['row_number']
+                )
                 
                 # ابتدا چک می‌کنیم آیا قبلاً وجود دارد
                 existing = db_manager.get_sales_data_by_unique_key(unique_key)
@@ -240,19 +334,25 @@ class GoogleSheetExtractor:
                     else:
                         updated_count += 1
                     
-                    # علامت‌گذاری در Google Sheet
-                    self.mark_as_extracted(
-                        sheet_config.sheet_url,
-                        sheet_config.worksheet_name or 'Sheet1',
-                        row['row_number'],
-                        sheet_config.extracted_column
-                    )
+                    # اضافه کردن به لیست ردیف‌های آماده علامت‌گذاری
+                    rows_to_mark.append(row['row_number'])
+            
+            # علامت‌گذاری همه ردیف‌ها به صورت یکجا (Batch Update)
+            if rows_to_mark:
+                self.logger.info(f"🔄 در حال علامت‌گذاری {len(rows_to_mark)} ردیف...")
+                self.mark_rows_as_extracted(
+                    sheet_config.sheet_url,
+                    sheet_config.worksheet_name or 'Sheet1',
+                    rows_to_mark,
+                    sheet_config.extracted_column
+                )
             
             stats = {
                 'new_records': new_count,
                 'updated_records': updated_count,
                 'total_rows': len(ready_rows),
-                'duplicates': duplicate_list  # لیست تکراری‌ها
+                'duplicates': duplicate_list,  # لیست تکراری‌ها
+                'warnings': warnings  # هشدارهای تغییرات
             }
             
             return True, f"{new_count} جدید، {updated_count} بروز شد، {len(duplicate_list)} تکراری", stats

@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QMessageBox, QWizard, QWizardPage,
     QFileDialog, QLineEdit, QComboBox, QTextEdit,
-    QGroupBox, QListWidget
+    QGroupBox, QListWidget, QWidget
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QScreen
@@ -65,6 +65,10 @@ class TemplateWizard(QWizard):
         
         # شروع از اولین صفحه
         self.setStartId(self.PAGE_SELECT_FILE)
+        
+        # اگر در حال ویرایش است، داده‌های Template را بارگذاری کن
+        if self.template:
+            self.load_template_data()
         
         # استایل یکپارچه با سایر فرم‌ها
         self.setStyleSheet(f"""
@@ -267,11 +271,46 @@ class TemplateWizard(QWizard):
         type_group = QGroupBox("🏷️ نوع Template")
         type_layout = QVBoxLayout(type_group)
         
+        # توضیحات
+        type_info = QLabel("💡 می‌توانید یکی از انواع از پیش تعریف شده را انتخاب کنید، یا نوع Custom با نام دلخواه:")
+        type_info.setWordWrap(True)
+        type_info.setStyleSheet("color: #666; font-size: 10pt; padding: 5px; background: #FFF9C4; border-radius: 4px;")
+        type_layout.addWidget(type_info)
+        
+        # لیست کشویی برای انتخاب نوع
+        type_select_layout = QHBoxLayout()
+        type_select_layout.addWidget(QLabel("انتخاب نوع:"))
+        
         self.template_type = QComboBox()
-        self.template_type.addItems(["type1", "type2", "type3", "custom"])
+        self.template_type.addItems([
+            "💰 حساب",
+            "📄 فاکتور",
+            "📦 کالا",
+            "⚙️ سفارشی"
+        ])
         self.template_type.setMinimumHeight(40)
         self.template_type.setStyleSheet("font-size: 11pt; padding: 8px;")
-        type_layout.addWidget(self.template_type)
+        self.template_type.currentIndexChanged.connect(self.on_template_type_changed)
+        type_select_layout.addWidget(self.template_type, 1)
+        type_layout.addLayout(type_select_layout)
+        
+        # فیلد نام Custom (مخفی به صورت پیش‌فرض)
+        self.custom_type_widget = QWidget()
+        custom_type_layout = QVBoxLayout(self.custom_type_widget)
+        custom_type_layout.setContentsMargins(0, 5, 0, 0)
+        
+        custom_label = QLabel("📝 نام Custom:")
+        custom_label.setStyleSheet("font-weight: bold;")
+        custom_type_layout.addWidget(custom_label)
+        
+        self.custom_type_name = QLineEdit()
+        self.custom_type_name.setPlaceholderText("مثال: تایپ ویژه شرکت ABC")
+        self.custom_type_name.setMinimumHeight(40)
+        self.custom_type_name.setStyleSheet("font-size: 11pt; padding: 8px; border: 2px solid #FF9800;")
+        custom_type_layout.addWidget(self.custom_type_name)
+        
+        self.custom_type_widget.setVisible(False)
+        type_layout.addWidget(self.custom_type_widget)
         
         layout.addWidget(type_group)
         
@@ -372,6 +411,62 @@ class TemplateWizard(QWizard):
             QMessageBox.critical(self, "خطا", f"خطا در تحلیل فایل:\n{str(e)}")
             app_logger.error(f"Error analyzing Excel file: {e}")
     
+    def load_template_data(self):
+        """بارگذاری داده‌های Template برای ویرایش"""
+        try:
+            if not self.template:
+                return
+            
+            # بارگذاری مسیر Excel
+            self.excel_file_path = self.template.template_path
+            if self.excel_file_path and Path(self.excel_file_path).exists():
+                self.file_path_label.setText(f"✅ {Path(self.excel_file_path).name}")
+                self.file_path_label.setStyleSheet("""
+                    padding: 10px;
+                    background: #C8E6C9;
+                    border: 2px solid #4CAF50;
+                    border-radius: 5px;
+                    font-weight: bold;
+                """)
+                
+                # تحلیل فایل Excel
+                self.analyze_excel_file()
+            
+            # بارگذاری mappings
+            if self.template.column_mappings:
+                self.column_mappings = self.template.column_mappings
+            
+            # بارگذاری نام و توضیحات
+            if hasattr(self, 'template_name'):
+                self.template_name.setText(self.template.name)
+            
+            if hasattr(self, 'template_description'):
+                self.template_description.setText(self.template.description or "")
+            
+            # بارگذاری نوع Template
+            if hasattr(self, 'template_type'):
+                template_type = self.template.template_type
+                # پیدا کردن index مناسب
+                for i in range(self.template_type.count()):
+                    item_text = self.template_type.itemText(i)
+                    if template_type.startswith("Custom:"):
+                        # اگر Custom است
+                        if "Custom" in item_text:
+                            self.template_type.setCurrentIndex(i)
+                            custom_name = template_type.replace("Custom: ", "").strip()
+                            if hasattr(self, 'custom_type_name'):
+                                self.custom_type_name.setText(custom_name)
+                            break
+                    elif template_type in item_text:
+                        self.template_type.setCurrentIndex(i)
+                        break
+            
+            app_logger.info(f"Template '{self.template.name}' بارگذاری شد برای ویرایش")
+            
+        except Exception as e:
+            app_logger.error(f"خطا در بارگذاری Template: {e}")
+            QMessageBox.warning(self, "هشدار", f"خطا در بارگذاری Template:\n{str(e)}")
+    
     def load_available_sheets(self):
         """بارگذاری Google Sheets موجود"""
         try:
@@ -385,19 +480,38 @@ class TemplateWizard(QWizard):
                 self.sheets_list.addItem("⚠️ هیچ Google Sheet فعالی یافت نشد")
                 return
             
+            # Import Google Sheets برای خواندن ستون‌های واقعی
+            from app.core.google_sheets import GoogleSheetExtractor
+            extractor = GoogleSheetExtractor()
+            
             for config in sheet_configs:
                 # تحلیل ستون‌ها
                 columns = []
-                if config.column_mappings:
-                    columns = list(config.column_mappings.keys())
                 
-                # اگر ستونی نداریم، از نام‌های نمونه استفاده کن
+                # ابتدا سعی می‌کنیم از Google Sheets واقعی بخوانیم
+                try:
+                    if config.sheet_url and config.worksheet_name:
+                        headers = extractor.get_headers(config.sheet_url, config.worksheet_name)
+                        if headers:
+                            columns = headers
+                            app_logger.info(f"✅ ستون‌های Sheet '{config.name}' از Google خوانده شد: {len(columns)} ستون")
+                except Exception as e:
+                    app_logger.warning(f"⚠️ خطا در خواندن ستون‌های واقعی از Google Sheets: {e}")
+                
+                # اگر نتوانستیم بخوانیم، از column_mappings استفاده کن
+                if not columns and config.column_mappings:
+                    columns = list(config.column_mappings.keys())
+                    app_logger.info(f"📋 از column_mappings استفاده شد: {len(columns)} ستون")
+                
+                # اگر هنوز خالی است، پیام خطا
                 if not columns:
-                    columns = ['Column_A', 'Column_B', 'Column_C', 'Column_D', 'Column_E']
+                    app_logger.error(f"❌ Sheet '{config.name}' هیچ ستونی ندارد!")
+                    continue
                 
                 self.available_sheets[config.id] = {
                     'name': config.name,
                     'worksheet': config.worksheet_name,
+                    'sheet_url': config.sheet_url,
                     'columns': columns
                 }
                 
@@ -454,10 +568,10 @@ class TemplateWizard(QWizard):
                         return
                     
                     # ساخت ویجت
-                    excel_cols = [col['letter'] for col in self.excel_columns]
+                    # پاس دادن کامل اطلاعات ستون‌ها (letter + name)
                     self.mapping_widget = ColumnMappingWidget(
                         self,
-                        excel_columns=excel_cols,
+                        excel_columns=self.excel_columns,  # کامل: [{'letter': 'A', 'name': 'ردیف', 'sheet': ...}]
                         available_sheets=selected_sheets
                     )
                     self.mapping_widget_container.addWidget(self.mapping_widget)
@@ -487,6 +601,12 @@ class TemplateWizard(QWizard):
             
             self.summary_label.setText(summary)
     
+    def on_template_type_changed(self, index):
+        """تغییر نوع Template"""
+        # اگر Custom انتخاب شد (آخرین گزینه)، فیلد نام Custom را نمایش بده
+        is_custom = (index == self.template_type.count() - 1)
+        self.custom_type_widget.setVisible(is_custom)
+    
     def validateCurrentPage(self):
         """اعتبارسنجی صفحه فعلی"""
         current_id = self.currentId()
@@ -505,18 +625,55 @@ class TemplateWizard(QWizard):
             if not self.template_name.text().strip():
                 QMessageBox.warning(self, "هشدار", "لطفاً نام Template را وارد کنید")
                 return False
+            
+            # بررسی Custom Type
+            if self.template_type.currentIndex() == self.template_type.count() - 1:
+                if not self.custom_type_name.text().strip():
+                    QMessageBox.warning(self, "هشدار", "لطفاً نام Custom برای نوع Template را وارد کنید")
+                    return False
         
         return True
     
     def accept(self):
         """ذخیره Template"""
         try:
+            # ✅ اعتبارسنجی قبل از ذخیره
+            template_name = self.template_name.text().strip()
+            if not template_name:
+                QMessageBox.warning(self, "هشدار", "لطفاً نام Template را وارد کنید")
+                return  # خروج بدون ذخیره
+            
             # دریافت اطلاعات
             mappings = self.mapping_widget.get_mappings() if self.mapping_widget else {}
             
+            # تعیین نوع Template
+            template_type_text = self.template_type.currentText()
+            if "Custom" in template_type_text:
+                # اگر Custom است، از نام وارد شده استفاده کن
+                custom_name = self.custom_type_name.text().strip()
+                if not custom_name:
+                    QMessageBox.warning(self, "هشدار", "لطفاً نام Custom برای نوع Template را وارد کنید")
+                    return  # خروج بدون ذخیره
+                final_type = f"Custom: {custom_name}"
+            else:
+                # استخراج نام کوتاه (مثلاً "حساب" از "💰 حساب")
+                # حذف emoji و فاصله اضافی
+                final_type = template_type_text.split(" ")[-1].strip()
+            
+            # اعتبارسنجی mappings
+            if not mappings:
+                reply = QMessageBox.question(
+                    self,
+                    "هشدار",
+                    "هیچ Mapping ای تعریف نشده است.\n\nآیا مطمئن هستید که می‌خواهید ادامه دهید؟",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.No:
+                    return  # خروج بدون ذخیره
+            
             template_data = {
-                'name': self.template_name.text().strip(),
-                'template_type': self.template_type.currentText(),
+                'name': template_name,
+                'template_type': final_type,
                 'template_path': self.excel_file_path,
                 'target_worksheet': self.excel_columns[0]['sheet'] if self.excel_columns else 'Sheet1',
                 'column_mappings': mappings,
@@ -536,13 +693,15 @@ class TemplateWizard(QWizard):
             
             if success:
                 QMessageBox.information(self, "موفقیت", "Template با موفقیت ذخیره شد ✅")
-                super().accept()
+                super().accept()  # فقط در صورت موفقیت
             else:
                 QMessageBox.critical(self, "خطا", f"خطا در ذخیره Template:\n{message}")
+                # در صورت خطا، باز نمی‌گردد
         
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"خطا در ذخیره Template:\n{str(e)}")
             app_logger.error(f"Error saving template: {e}")
+            # در صورت خطا، باز نمی‌گردد
 
 
 class TemplateManagerDialog(QDialog):

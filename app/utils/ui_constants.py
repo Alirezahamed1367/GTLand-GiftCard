@@ -78,6 +78,42 @@ COLOR_TEXT_SECONDARY = "#666666"
 COLOR_TEXT_DISABLED = "#999999"
 
 
+# ==================== DICTIONARY EXPORTS ====================
+# دیکشنری‌های مناسب برای import
+COLORS = {
+    'primary': COLOR_PRIMARY,
+    'success': COLOR_SUCCESS,
+    'warning': COLOR_WARNING,
+    'danger': COLOR_DANGER,
+    'info': COLOR_INFO,
+    'accent': COLOR_PRIMARY_LIGHT,
+    'secondary': COLOR_TEXT_SECONDARY,
+    'background': COLOR_BACKGROUND,
+    'surface': COLOR_SURFACE,
+    'border': COLOR_BORDER,
+    'text': COLOR_TEXT
+}
+
+def get_fonts():
+    """دریافت دیکشنری فونت‌ها"""
+    from PyQt6.QtGui import QFont
+    return {
+        'large_bold': QFont('Segoe UI', 16, QFont.Weight.Bold),
+        'large': QFont('Segoe UI', 14),
+        'medium_bold': QFont('Segoe UI', 11, QFont.Weight.Bold),
+        'medium': QFont('Segoe UI', 10),
+        'small_bold': QFont('Segoe UI', 9, QFont.Weight.Bold),
+        'small': QFont('Segoe UI', 9),
+    }
+
+# برای import مستقیم
+try:
+    from PyQt6.QtGui import QFont
+    FONTS = get_fonts()
+except:
+    FONTS = {}
+
+
 # ==================== BORDER RADIUS ====================
 RADIUS_SMALL = 4               # گوشه‌های کوچک
 RADIUS_MEDIUM = 6              # گوشه‌های متوسط

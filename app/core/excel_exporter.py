@@ -13,7 +13,7 @@ import shutil
 
 from app.core.logger import app_logger
 from app.core.database import db_manager
-from app.models import ExportTemplate, SalesData
+from app.models import ExportTemplate, SalesData, ExportLog
 
 
 class ExcelExporter:
@@ -59,6 +59,24 @@ class ExcelExporter:
             # دریافت Mapping ستون‌ها
             column_mappings = template.column_mappings or {}
             
+            # بررسی فرمت mapping (قدیم یا جدید)
+            # فرمت قدیم: {'db_column': 'A'}
+            # فرمت جدید: {'A': {'source_column': 'db_column', 'source_sheet': 1, 'formula': None}}
+            is_new_format = False
+            if column_mappings:
+                first_value = next(iter(column_mappings.values()))
+                if isinstance(first_value, dict) and 'source_column' in first_value:
+                    is_new_format = True
+            
+            # تبدیل فرمت جدید به قدیم برای سازگاری
+            if is_new_format:
+                old_format_mappings = {}
+                for excel_col, mapping_info in column_mappings.items():
+                    source_col = mapping_info.get('source_column')
+                    if source_col:
+                        old_format_mappings[source_col] = excel_col
+                column_mappings = old_format_mappings
+            
             # شروع از سطر مشخص شده
             current_row = template.start_row
             
@@ -99,6 +117,22 @@ class ExcelExporter:
             # علامت‌گذاری داده‌ها به عنوان Exported
             data_ids = [data.id for data in data_list]
             db_manager.mark_as_exported(data_ids, template.template_type)
+            
+            # ثبت لاگ Export
+            try:
+                db = db_manager.get_session()
+                export_log = ExportLog(
+                    export_type=template.template_type,
+                    record_count=len(data_list),
+                    file_path=output_path,
+                    template_name=template.name
+                )
+                db.add(export_log)
+                db.commit()
+                db.close()
+                self.logger.info(f"لاگ Export ثبت شد (ID: {export_log.id})")
+            except Exception as log_error:
+                self.logger.warning(f"خطا در ثبت لاگ Export: {log_error}")
             
             message = f"✅ {len(data_list)} رکورد با موفقیت Export شدند"
             self.logger.success(message)
@@ -152,11 +186,27 @@ class ExcelExporter:
                 bottom=Side(style='thin')
             )
             
+            # تبدیل فرمت mapping (اگر جدید است)
+            column_mappings = template.column_mappings or {}
+            is_new_format = False
+            if column_mappings:
+                first_value = next(iter(column_mappings.values()))
+                if isinstance(first_value, dict) and 'source_column' in first_value:
+                    is_new_format = True
+            
+            if is_new_format:
+                old_format_mappings = {}
+                for excel_col, mapping_info in column_mappings.items():
+                    source_col = mapping_info.get('source_column')
+                    if source_col:
+                        old_format_mappings[source_col] = excel_col
+                column_mappings = old_format_mappings
+            
             # فرمت‌بندی هدر (سطر قبل از start_row)
             if template.start_row > 1:
                 header_row = template.start_row - 1
-                for col_idx, (db_col, excel_col) in enumerate(template.column_mappings.items(), 1):
-                    if excel_col.isalpha():
+                for db_col, excel_col in column_mappings.items():
+                    if isinstance(excel_col, str) and excel_col.isalpha():
                         cell = ws[f"{excel_col}{header_row}"]
                         cell.fill = header_fill
                         cell.font = header_font
@@ -166,8 +216,8 @@ class ExcelExporter:
             # فرمت‌بندی داده‌ها
             end_row = template.start_row + len(data_list) - 1
             for row_idx in range(template.start_row, end_row + 1):
-                for db_col, excel_col in template.column_mappings.items():
-                    if excel_col.isalpha():
+                for db_col, excel_col in column_mappings.items():
+                    if isinstance(excel_col, str) and excel_col.isalpha():
                         cell = ws[f"{excel_col}{row_idx}"]
                         cell.border = border_thin
                         cell.alignment = Alignment(horizontal="right", vertical="center")

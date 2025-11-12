@@ -33,20 +33,20 @@ class SheetConfigDialog(QDialog):
     
     def init_ui(self):
         """راه‌اندازی رابط کاربری"""
-        title = "✏️ ویرایش تنظیمات" if self.is_edit_mode else "➕ افزودن شیت جدید"
+        title = "✏️ ویرایش" if self.is_edit_mode else "➕ افزودن شیت"
         self.setWindowTitle(title)
         
-        # سایز Responsive
-        screen = self.screen().availableGeometry()
-        width, height = get_responsive_dialog_size(screen, "small")
-        self.resize(width, height)
+        # سایز بهینه - کوچک‌تر
+        self.resize(700, 600)  # قبلاً خیلی بزرگ بود
+        self.setMaximumWidth(800)
         
         self.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
+        layout.setSpacing(10)  # کاهش فاصله
+        layout.setContentsMargins(15, 15, 15, 15)  # کاهش حاشیه
         
-        # عنوان
+        # عنوان کوچک‌تر
         title_label = QLabel(title)
         title_label.setFont(QFont("Segoe UI", FONT_SIZE_TITLE, QFont.Weight.Bold))
         title_label.setStyleSheet(f"color: {COLOR_PRIMARY}; padding: 10px;")
@@ -76,28 +76,46 @@ class SheetConfigDialog(QDialog):
         # ستون‌های کنترل
         control_group = QGroupBox("🎯 ستون‌های کنترل")
         control_layout = QFormLayout()
-        control_layout.setSpacing(10)
+        control_layout.setSpacing(8)
+        
+        # توضیحات کوچک‌تر
+        help_label = QLabel(
+            "💡 نام Header یا حرف ستون\n"
+            "پیشنهاد: ✅Ready و ✅Extracted"
+        )
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("""
+            background: #E3F2FD;
+            padding: 6px;
+            border-radius: 3px;
+            color: #1565C0;
+            font-size: 8pt;
+            border-left: 3px solid #2196F3;
+        """)
+        control_layout.addRow(help_label)
         
         self.ready_col_input = QLineEdit()
-        self.ready_col_input.setPlaceholderText("مثال: H")
-        self.ready_col_input.setText("H")
+        self.ready_col_input.setPlaceholderText("مثال: ✅Ready یا H")
+        self.ready_col_input.setText("✅Ready")
+        self.ready_col_input.setToolTip("نام header یا حرف ستون در Google Sheet")
         control_layout.addRow("ستون آماده:", self.ready_col_input)
         
         self.extracted_col_input = QLineEdit()
-        self.extracted_col_input.setPlaceholderText("مثال: I")
-        self.extracted_col_input.setText("I")
+        self.extracted_col_input.setPlaceholderText("مثال: ✅Extracted یا I")
+        self.extracted_col_input.setText("✅Extracted")
+        self.extracted_col_input.setToolTip("نام header یا حرف ستون در Google Sheet")
         control_layout.addRow("ستون استخراج شده:", self.extracted_col_input)
         
         control_group.setLayout(control_layout)
         layout.addWidget(control_group)
         
         # ستون‌های کلید یکتا
-        unique_group = QGroupBox("🔑 ستون‌های کلید یکتا")
+        unique_group = QGroupBox("🔑 ستون‌های کلیدی")
         unique_layout = QVBoxLayout()
+        unique_layout.setSpacing(6)
         
-        info_label = QLabel("ستون‌هایی که ترکیب آنها باعث یکتایی رکورد می‌شود (با کامای انگلیسی جدا کنید)")
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-size: 9pt;")
+        info_label = QLabel("ستون‌های یکتا (با کاما جدا کنید)")
+        info_label.setStyleSheet("color: #666; font-size: 8pt;")
         unique_layout.addWidget(info_label)
         
         self.unique_cols_input = QLineEdit()
@@ -108,37 +126,24 @@ class SheetConfigDialog(QDialog):
         unique_group.setLayout(unique_layout)
         layout.addWidget(unique_group)
         
-        # ستون‌های مورد نیاز برای استخراج
-        columns_group = QGroupBox("📥 ستون‌های مورد نیاز برای استخراج")
+        # ستون‌های استخراج - کوچک‌تر
+        columns_group = QGroupBox("📥 ستون‌های استخراج")
         columns_layout = QVBoxLayout()
+        columns_layout.setSpacing(6)
         
-        info_label2 = QLabel("فقط این ستون‌ها استخراج می‌شوند (با کامای انگلیسی جدا کنید)\nمثال: A,B,C,D,E یا خالی = همه ستون‌ها")
-        info_label2.setWordWrap(True)
-        info_label2.setStyleSheet("color: #666; font-size: 9pt;")
+        info_label2 = QLabel("خالی = همه ستون‌ها")
+        info_label2.setStyleSheet("color: #666; font-size: 8pt;")
         columns_layout.addWidget(info_label2)
         
         self.columns_to_extract_input = QLineEdit()
-        self.columns_to_extract_input.setPlaceholderText("مثال: A,B,C,D,E (خالی = همه ستون‌ها)")
+        self.columns_to_extract_input.setPlaceholderText("مثال: A,B,C,D,E")
         columns_layout.addWidget(self.columns_to_extract_input)
         
         columns_group.setLayout(columns_layout)
         layout.addWidget(columns_group)
         
-        # نقشه ستون‌ها (JSON)
-        mapping_group = QGroupBox("🗺️ نقشه ستون‌ها (اختیاری)")
-        mapping_layout = QVBoxLayout()
-        
-        mapping_info = QLabel("فرمت JSON برای نام‌گذاری ستون‌ها:\n{\"A\": \"کد\", \"B\": \"نام\", \"C\": \"قیمت\"}")
-        mapping_info.setStyleSheet("color: #666; font-size: 9pt;")
-        mapping_layout.addWidget(mapping_info)
-        
-        self.mapping_input = QTextEdit()
-        self.mapping_input.setPlaceholderText('{"A": "کد", "B": "نام", "C": "قیمت"}')
-        self.mapping_input.setMaximumHeight(80)
-        mapping_layout.addWidget(self.mapping_input)
-        
-        mapping_group.setLayout(mapping_layout)
-        layout.addWidget(mapping_group)
+        # نقشه ستون‌ها - حذف (اختیاری)
+        # mapping_group کاملاً حذف شد برای کوچک کردن
         
         # تنظیمات اضافی
         settings_layout = QHBoxLayout()
@@ -195,11 +200,6 @@ class SheetConfigDialog(QDialog):
             extract_cols = ",".join(self.sheet_config.columns_to_extract)
             self.columns_to_extract_input.setText(extract_cols)
         
-        # نقشه ستون‌ها
-        if self.sheet_config.column_mappings:
-            mapping_json = json.dumps(self.sheet_config.column_mappings, ensure_ascii=False, indent=2)
-            self.mapping_input.setPlainText(mapping_json)
-        
         self.active_checkbox.setChecked(self.sheet_config.is_active)
     
     def validate(self) -> Tuple[bool, str]:
@@ -225,14 +225,6 @@ class SheetConfigDialog(QDialog):
         if not self.unique_cols_input.text().strip():
             return False, "حداقل یک ستون کلید یکتا الزامی است!"
         
-        # بررسی JSON نقشه ستون‌ها
-        mapping_text = self.mapping_input.toPlainText().strip()
-        if mapping_text:
-            try:
-                json.loads(mapping_text)
-            except json.JSONDecodeError:
-                return False, "فرمت JSON نقشه ستون‌ها نامعتبر است!"
-        
         return True, ""
     
     def save(self):
@@ -251,8 +243,8 @@ class SheetConfigDialog(QDialog):
             columns_text = self.columns_to_extract_input.text().strip()
             columns_to_extract = [col.strip() for col in columns_text.split(",")] if columns_text else None
             
-            mapping_text = self.mapping_input.toPlainText().strip()
-            column_mappings = json.loads(mapping_text) if mapping_text else None
+            # نقشه ستون‌ها حذف شد (ساده‌سازی)
+            column_mappings = None
             
             data = {
                 'name': self.name_input.text().strip(),
@@ -270,8 +262,8 @@ class SheetConfigDialog(QDialog):
                 # بروزرسانی
                 success, message = db_manager.update_sheet_config(self.sheet_config.id, data)
             else:
-                # ایجاد جدید
-                success, message = db_manager.create_sheet_config(data)
+                # ایجاد جدید (3 مقدار بازگشت می‌دهد)
+                success, sheet_config, message = db_manager.create_sheet_config(data)
             
             if success:
                 QMessageBox.information(self, "موفق", "✅ " + message)

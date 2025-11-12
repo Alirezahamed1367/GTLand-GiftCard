@@ -67,6 +67,17 @@ class DatabaseManager:
             self.logger.error(f"خطا در دریافت تنظیمات شیت: {str(e)}")
             return None
     
+    def get_sheet_config_by_name(self, sheet_name: str) -> Optional[SheetConfig]:
+        """دریافت تنظیمات شیت بر اساس نام"""
+        try:
+            db = self.get_session()
+            config = db.query(SheetConfig).filter_by(name=sheet_name).first()
+            db.close()
+            return config
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت تنظیمات شیت با نام '{sheet_name}': {str(e)}")
+            return None
+    
     def create_sheet_config(self, data: Dict) -> Tuple[bool, Optional[SheetConfig], str]:
         """
         ایجاد تنظیمات جدید
@@ -418,6 +429,25 @@ class DatabaseManager:
             self.logger.error(f"خطا در دریافت داده: {str(e)}")
             return None
     
+    def get_sales_data_by_sheet_config(self, sheet_config_id: int) -> List[SalesData]:
+        """دریافت تمام رکوردهای یک شیت"""
+        try:
+            db = self.get_session()
+            data_list = db.query(SalesData).filter_by(sheet_config_id=sheet_config_id).all()
+            
+            # Force load and detach
+            result = []
+            for data in data_list:
+                _ = data.data
+                db.expunge(data)
+                result.append(data)
+            
+            db.close()
+            return result
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت داده‌های شیت: {str(e)}")
+            return []
+    
     def get_sales_data_by_unique_key(self, unique_key: str) -> Optional[SalesData]:
         """دریافت یک رکورد بر اساس Unique Key"""
         try:
@@ -453,6 +483,109 @@ class DatabaseManager:
             self.logger.error(f"خطا در شمارش: {str(e)}")
             return 0
     
+    # 🚀 Paginated Methods برای سرعت بالا
+    
+    def get_all_sales_data_paginated(
+        self, 
+        limit: int = 100, 
+        offset: int = 0,
+        sheet_config_id: Optional[int] = None
+    ) -> Tuple[List[SalesData], int]:
+        """دریافت داده‌ها با pagination"""
+        try:
+            db = self.get_session()
+            
+            query = db.query(SalesData).options(joinedload(SalesData.sheet_config))
+            
+            if sheet_config_id is not None:
+                query = query.filter_by(sheet_config_id=sheet_config_id)
+            
+            # شمارش کل
+            total = query.count()
+            
+            # دریافت صفحه فعلی
+            data_list = query.order_by(SalesData.id.desc()).limit(limit).offset(offset).all()
+            
+            # Force load and detach
+            result = []
+            for data in data_list:
+                _ = data.data
+                if data.sheet_config:
+                    _ = data.sheet_config.name
+                db.expunge(data)
+                result.append(data)
+            
+            db.close()
+            return result, total
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت داده‌ها (paginated): {str(e)}")
+            return [], 0
+    
+    def get_sales_data_by_export_status_paginated(
+        self,
+        is_exported: bool,
+        limit: int = 100,
+        offset: int = 0,
+        sheet_config_id: Optional[int] = None
+    ) -> Tuple[List[SalesData], int]:
+        """دریافت داده‌ها بر اساس وضعیت Export با pagination"""
+        try:
+            db = self.get_session()
+            
+            query = db.query(SalesData).options(joinedload(SalesData.sheet_config)).filter_by(is_exported=is_exported)
+            
+            if sheet_config_id is not None:
+                query = query.filter_by(sheet_config_id=sheet_config_id)
+            
+            total = query.count()
+            data_list = query.order_by(SalesData.id.desc()).limit(limit).offset(offset).all()
+            
+            result = []
+            for data in data_list:
+                _ = data.data
+                if data.sheet_config:
+                    _ = data.sheet_config.name
+                db.expunge(data)
+                result.append(data)
+            
+            db.close()
+            return result, total
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت داده‌ها (paginated): {str(e)}")
+            return [], 0
+    
+    def get_updated_sales_data_paginated(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        sheet_config_id: Optional[int] = None
+    ) -> Tuple[List[SalesData], int]:
+        """دریافت داده‌های ویرایش شده با pagination"""
+        try:
+            db = self.get_session()
+            
+            query = db.query(SalesData).options(joinedload(SalesData.sheet_config)).filter_by(is_updated=True)
+            
+            if sheet_config_id is not None:
+                query = query.filter_by(sheet_config_id=sheet_config_id)
+            
+            total = query.count()
+            data_list = query.order_by(SalesData.id.desc()).limit(limit).offset(offset).all()
+            
+            result = []
+            for data in data_list:
+                _ = data.data
+                if data.sheet_config:
+                    _ = data.sheet_config.name
+                db.expunge(data)
+                result.append(data)
+            
+            db.close()
+            return result, total
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت داده‌ها (paginated): {str(e)}")
+            return [], 0
+    
     def get_updated_sales_data_count(self) -> int:
         """شمارش داده‌های ویرایش شده"""
         try:
@@ -463,6 +596,109 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"خطا در شمارش: {str(e)}")
             return 0
+    
+    def get_sheet_statistics(self, sheet_config_id: int) -> Dict:
+        """
+        دریافت آمار کامل یک شیت
+        
+        Args:
+            sheet_config_id: شناسه شیت
+            
+        Returns:
+            {
+                'name': 'نام شیت',
+                'total': تعداد کل,
+                'exported': export شده,
+                'not_exported': export نشده,
+                'need_reexport': نیاز به re-export,
+                'last_extract': آخرین استخراج
+            }
+        """
+        try:
+            db = self.get_session()
+            
+            # دریافت نام شیت
+            sheet_config = db.query(SheetConfig).filter_by(id=sheet_config_id).first()
+            sheet_name = sheet_config.name if sheet_config else "نامشخص"
+            
+            # آمار کلی
+            total = db.query(SalesData).filter_by(sheet_config_id=sheet_config_id).count()
+            
+            # Export شده
+            exported = db.query(SalesData).filter_by(
+                sheet_config_id=sheet_config_id,
+                is_exported=True
+            ).count()
+            
+            # Export نشده
+            not_exported = db.query(SalesData).filter_by(
+                sheet_config_id=sheet_config_id,
+                is_exported=False
+            ).count()
+            
+            # نیاز به Re-export (export شده ولی update شده)
+            need_reexport = db.query(SalesData).filter_by(
+                sheet_config_id=sheet_config_id,
+                is_exported=True,
+                is_updated=True
+            ).count()
+            
+            # آخرین استخراج
+            last_data = db.query(SalesData).filter_by(
+                sheet_config_id=sheet_config_id
+            ).order_by(SalesData.extracted_at.desc()).first()
+            
+            last_extract = last_data.extracted_at if last_data else None
+            
+            db.close()
+            
+            return {
+                'sheet_config_id': sheet_config_id,
+                'name': sheet_name,
+                'total': total,
+                'exported': exported,
+                'not_exported': not_exported,
+                'need_reexport': need_reexport,
+                'last_extract': last_extract
+            }
+            
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت آمار شیت: {str(e)}")
+            return {
+                'sheet_config_id': sheet_config_id,
+                'name': "خطا",
+                'total': 0,
+                'exported': 0,
+                'not_exported': 0,
+                'need_reexport': 0,
+                'last_extract': None
+            }
+    
+    def get_all_sheets_statistics(self) -> List[Dict]:
+        """دریافت آمار همه شیت‌ها"""
+        try:
+            db = self.get_session()
+            
+            # شیت‌هایی که داده دارند
+            sheet_ids = db.query(SalesData.sheet_config_id).distinct().all()
+            sheet_ids = [sid[0] for sid in sheet_ids]
+            
+            db.close()
+            
+            stats = []
+            for sheet_id in sheet_ids:
+                stat = self.get_sheet_statistics(sheet_id)
+                if stat['total'] > 0:
+                    stats.append(stat)
+            
+            # مرتب‌سازی بر اساس تعداد (بیشترین اول)
+            stats.sort(key=lambda x: x['total'], reverse=True)
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت آمار همه شیت‌ها: {str(e)}")
+            return []
     
     def delete_sales_data(self, data_id: int) -> Tuple[bool, str]:
         """حذف یک رکورد"""

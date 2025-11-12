@@ -74,7 +74,8 @@ class FormulaBuilderDialog(QDialog):
             "📅 Date Format - قالب‌بندی تاریخ",
             "❓ IF Condition - شرط",
             "📏 Substring - برش متن",
-            "🔢 Number Format - قالب‌بندی عدد"
+            "🔢 Number Format - قالب‌بندی عدد",
+            "🗑️ Remove Duplicates - حذف تکراری"
         ])
         self.formula_type_combo.setStyleSheet("""
             QComboBox {
@@ -188,6 +189,8 @@ class FormulaBuilderDialog(QDialog):
             self.create_substring_settings()
         elif index == 8:  # Number Format
             self.create_number_format_settings()
+        elif index == 9:  # Remove Duplicates
+            self.create_remove_duplicates_settings()
     
     def create_merge_settings(self):
         """تنظیمات Merge"""
@@ -405,6 +408,60 @@ class FormulaBuilderDialog(QDialog):
         self.settings_stack.addWidget(group)
         self.update_preview()
     
+    def create_remove_duplicates_settings(self):
+        """تنظیمات حذف تکراری"""
+        group = QGroupBox("🗑️ حذف رکوردهای تکراری")
+        layout = QVBoxLayout(group)
+        
+        # توضیحات
+        info = QLabel("""
+        ⚠️ این عملیات تمام رکوردهای تکراری را حذف می‌کند.
+        
+        📌 نحوه کار:
+        • بر اساس ستون‌های کلیدی که انتخاب می‌کنید، تکراری‌ها شناسایی می‌شوند
+        • فقط اولین رکورد از هر مجموعه تکراری نگه داشته می‌شود
+        • سایر رکوردهای تکراری به اکسل نهایی منتقل نمی‌شوند
+        
+        🔑 ستون‌های کلیدی برای شناسایی تکراری:
+        """)
+        info.setWordWrap(True)
+        info.setStyleSheet("""
+            background-color: #FFF3E0;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #FF9800;
+        """)
+        layout.addWidget(info)
+        
+        # انتخاب ستون‌های کلیدی
+        columns_label = QLabel("ستون‌هایی که باید برای شناسایی تکراری بررسی شوند:")
+        layout.addWidget(columns_label)
+        
+        self.duplicate_key_columns = QTextEdit()
+        self.duplicate_key_columns.setMaximumHeight(100)
+        self.duplicate_key_columns.setPlaceholderText("مثال:\nکد کالا\nتاریخ\nشماره فاکتور\n\n(هر ستون در یک خط)")
+        self.duplicate_key_columns.textChanged.connect(self.update_preview)
+        layout.addWidget(self.duplicate_key_columns)
+        
+        # گزینه: حفظ اولین یا آخرین
+        keep_layout = QHBoxLayout()
+        keep_layout.addWidget(QLabel("کدام رکورد نگه داشته شود:"))
+        
+        self.keep_first_radio = QRadioButton("اولین رکورد")
+        self.keep_first_radio.setChecked(True)
+        self.keep_first_radio.toggled.connect(self.update_preview)
+        keep_layout.addWidget(self.keep_first_radio)
+        
+        self.keep_last_radio = QRadioButton("آخرین رکورد")
+        self.keep_last_radio.toggled.connect(self.update_preview)
+        keep_layout.addWidget(self.keep_last_radio)
+        
+        keep_layout.addStretch()
+        layout.addLayout(keep_layout)
+        
+        self.settings_stack.addWidget(group)
+        self.update_preview()
+    
     def update_preview(self):
         """به‌روزرسانی پیش‌نمایش Formula"""
         formula_type = self.formula_type_combo.currentIndex()
@@ -460,6 +517,15 @@ class FormulaBuilderDialog(QDialog):
                 fmt_type = self.number_format_type.currentIndex()
                 fmts = ["NUMBER_FORMAT", "DECIMAL_2", "PERCENT", "CURRENCY", "SCIENTIFIC"]
                 preview = f"{fmts[fmt_type]}(value)"
+            
+            elif formula_type == 9:  # Remove Duplicates
+                key_cols = self.duplicate_key_columns.toPlainText().strip().split('\n')
+                key_cols = [col.strip() for col in key_cols if col.strip()]
+                keep = "first" if self.keep_first_radio.isChecked() else "last"
+                if key_cols:
+                    preview = f"REMOVE_DUPLICATES(keys=[{', '.join(key_cols)}], keep='{keep}')"
+                else:
+                    preview = "REMOVE_DUPLICATES(keys=[همه ستون‌ها], keep='first')"
             
             self.formula_preview.setText(preview)
         

@@ -198,7 +198,10 @@ class ColumnMappingWidget(QWidget):
     
     def __init__(self, parent=None, excel_columns=None, available_sheets=None):
         super().__init__(parent)
-        self.excel_columns = excel_columns or []  # ['A', 'B', 'C', ...]
+        # excel_columns می‌تواند لیست string ها یا لیست dict ها باشد
+        # فرمت قدیم: ['A', 'B', 'C']
+        # فرمت جدید: [{'letter': 'A', 'name': 'ردیف', 'sheet': 'Sheet1'}, ...]
+        self.excel_columns = excel_columns or []
         self.available_sheets = available_sheets or {}  # {sheet_id: {name, columns}}
         self.mappings = {}
         
@@ -353,8 +356,19 @@ class ColumnMappingWidget(QWidget):
         
         # افزودن ستون‌های Excel
         for col in self.excel_columns:
-            item = QListWidgetItem(f"⬜ {col}")
-            item.setData(Qt.ItemDataRole.UserRole, col)
+            # پشتیبانی از فرمت قدیم و جدید
+            if isinstance(col, dict):
+                # فرمت جدید: {'letter': 'A', 'name': 'ردیف', 'sheet': 'Sheet1'}
+                col_letter = col['letter']
+                col_name = col['name']
+                display_text = f"⬜ {col_letter} - {col_name}"
+            else:
+                # فرمت قدیم: 'A'
+                col_letter = col
+                display_text = f"⬜ {col_letter}"
+            
+            item = QListWidgetItem(display_text)
+            item.setData(Qt.ItemDataRole.UserRole, col_letter)
             self.target_list.addItem(item)
         
         layout.addWidget(self.target_list)

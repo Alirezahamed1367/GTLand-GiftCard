@@ -10,7 +10,9 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from app.utils.ui_constants import COLORS
 from app.core.database import DatabaseManager
-from loguru import logger
+from app.core.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class DataViewerWidget(QWidget):
