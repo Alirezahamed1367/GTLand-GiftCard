@@ -81,7 +81,7 @@ class SheetConfigDialog(QDialog):
         # توضیحات کوچک‌تر
         help_label = QLabel(
             "💡 نام Header یا حرف ستون\n"
-            "پیشنهاد: ✅Ready و ✅Extracted"
+            "پیشنهاد: Ready و Extracted"
         )
         help_label.setWordWrap(True)
         help_label.setStyleSheet("""
@@ -95,14 +95,14 @@ class SheetConfigDialog(QDialog):
         control_layout.addRow(help_label)
         
         self.ready_col_input = QLineEdit()
-        self.ready_col_input.setPlaceholderText("مثال: ✅Ready یا H")
-        self.ready_col_input.setText("✅Ready")
+        self.ready_col_input.setPlaceholderText("مثال: Ready یا H")
+        self.ready_col_input.setText("Ready")
         self.ready_col_input.setToolTip("نام header یا حرف ستون در Google Sheet")
         control_layout.addRow("ستون آماده:", self.ready_col_input)
         
         self.extracted_col_input = QLineEdit()
-        self.extracted_col_input.setPlaceholderText("مثال: ✅Extracted یا I")
-        self.extracted_col_input.setText("✅Extracted")
+        self.extracted_col_input.setPlaceholderText("مثال: Extracted یا I")
+        self.extracted_col_input.setText("Extracted")
         self.extracted_col_input.setToolTip("نام header یا حرف ستون در Google Sheet")
         control_layout.addRow("ستون استخراج شده:", self.extracted_col_input)
         
