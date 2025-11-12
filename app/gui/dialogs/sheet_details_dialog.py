@@ -80,6 +80,26 @@ class SheetDetailsDialog(QDialog):
         
         main_layout.addLayout(header_layout)
         
+        # ============ آمار خطی ساده ============
+        # دریافت آمار
+        stats = self.db_manager.get_sheet_statistics(self.sheet_config_id)
+        
+        stats_text = f"کل: {stats['total']:,} ردیف  |  Export شده: {stats['exported']:,}  |  Export نشده: {stats['not_exported']:,}  |  نیاز به Re-export: {stats['need_reexport']:,}"
+        
+        stats_banner = QLabel(stats_text)
+        stats_banner.setFont(FONTS['medium'])
+        stats_banner.setStyleSheet("""
+            QLabel {
+                background-color: #f0f0f0;
+                color: #333;
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+            }
+        """)
+        stats_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(stats_banner)
+        
         # ============ Filter & Stats Section ============
         filter_layout = QHBoxLayout()
         

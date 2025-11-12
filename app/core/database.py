@@ -716,6 +716,43 @@ class DatabaseManager:
             self.logger.error(f"خطا در حذف: {str(e)}")
             return False, str(e)
     
+    def delete_sheet_data(self, sheet_config_id: int) -> Tuple[bool, str]:
+        """
+        حذف تمام داده‌های یک شیت (بدون حذف تنظیمات شیت)
+        
+        Args:
+            sheet_config_id: شناسه تنظیمات شیت
+            
+        Returns:
+            (موفقیت, پیام)
+        """
+        try:
+            db = self.get_session()
+            
+            # شمارش رکوردها قبل از حذف
+            count = db.query(SalesData).filter_by(sheet_config_id=sheet_config_id).count()
+            
+            if count == 0:
+                db.close()
+                return True, "هیچ داده‌ای برای حذف وجود ندارد"
+            
+            # حذف تمام داده‌های شیت
+            db.query(SalesData).filter_by(sheet_config_id=sheet_config_id).delete()
+            db.commit()
+            db.close()
+            
+            self.logger.log_to_db(
+                ProcessType.DELETE,
+                ProcessStatus.SUCCESS,
+                f"تمام داده‌های شیت (تعداد: {count}) حذف شدند"
+            )
+            
+            return True, f"{count} رکورد حذف شد"
+            
+        except Exception as e:
+            self.logger.error(f"خطا در حذف داده‌های شیت: {str(e)}")
+            return False, f"خطا: {str(e)}"
+    
     def update_sales_data(self, data_id: int, update_data: Dict) -> bool:
         """بروزرسانی یک رکورد"""
         try:

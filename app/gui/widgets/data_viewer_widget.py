@@ -23,6 +23,8 @@ class DataViewerWidget(QWidget):
         self.db_manager = DatabaseManager()
         self.selected_sheets = []
         self.setup_ui()
+        # بارگذاری خودکار کارت‌ها
+        self.load_sheets()
         
     def setup_ui(self):
         """راه‌اندازی رابط کاربری"""
@@ -117,8 +119,9 @@ class DataViewerWidget(QWidget):
         deselect_all_btn.clicked.connect(self.deselect_all_sheets)
         layout.addWidget(deselect_all_btn)
         
-        # دکمه حذف داده‌ها
-        delete_data_btn = QPushButton("🗑️ حذف داده‌های انتخاب شده")
+        # دکمه حذف داده‌ها (فقط داده‌ها - تنظیمات باقی می‌ماند)
+        delete_data_btn = QPushButton("🗑️ حذف فقط داده‌ها")
+        delete_data_btn.setToolTip("حذف داده‌های استخراج شده - تنظیمات شیت حفظ می‌شود")
         delete_data_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {COLORS['warning']};
@@ -134,8 +137,9 @@ class DataViewerWidget(QWidget):
         delete_data_btn.clicked.connect(self.delete_selected_data)
         layout.addWidget(delete_data_btn)
         
-        # دکمه حذف کامل
-        delete_sheets_btn = QPushButton("💣 حذف کامل شیت‌های انتخاب شده")
+        # دکمه حذف کامل (داده‌ها + تنظیمات)
+        delete_sheets_btn = QPushButton("💣 حذف کامل (داده + تنظیمات)")
+        delete_sheets_btn.setToolTip("⚠️ حذف کامل شیت‌ها همراه با تنظیماتشان - غیرقابل بازگشت!")
         delete_sheets_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {COLORS['danger']};
@@ -175,61 +179,64 @@ class DataViewerWidget(QWidget):
             self.cards_layout.addWidget(no_data, 0, 0)
             return
         
-        # اضافه کردن کارت‌ها - 3 در هر ردیف
+        # اضافه کردن کارت‌ها - 4 در هر ردیف (چون کوچک‌تر شدند)
         row, col = 0, 0
         for stat in stats:
             card = self.create_simple_card(stat)
             self.cards_layout.addWidget(card, row, col)
             
             col += 1
-            if col >= 3:
+            if col >= 4:  # 4 کارت در هر ردیف
                 col = 0
                 row += 1
     
     def create_simple_card(self, stat):
-        """ایجاد کارت ساده و خوانا"""
+        """ایجاد کارت ساده بدون آمار"""
         
-        # تعیین رنگ
+        # تعیین رنگ بر اساس وضعیت
         if stat['not_exported'] > 0:
             border_color = COLORS['danger']
-            status = "❌ دارای Export نشده"
+            status_text = "نشده دارد Export"
         elif stat['need_reexport'] > 0:
             border_color = COLORS['warning']
-            status = "⚠️ نیاز به Re-export"
+            status_text = "نیاز به Re-export"
         else:
             border_color = COLORS['success']
-            status = "✅ همه Export شده"
+            status_text = "همه Export شده"
         
         # کارت اصلی
         card = QFrame()
-        card.setMinimumSize(350, 380)
-        card.setMaximumWidth(450)
+        card.setObjectName("SheetCard")
+        card.setFixedSize(340, 200)
         card.setStyleSheet(f"""
-            QFrame {{
+            QFrame#SheetCard {{
                 background-color: white;
-                border: 4px solid {border_color};
-                border-radius: 15px;
-                padding: 20px;
+                border: 3px solid {border_color};
+                border-radius: 10px;
             }}
-            QFrame:hover {{
+            QFrame#SheetCard:hover {{
                 background-color: #f8f9fa;
             }}
         """)
         
-        layout = QVBoxLayout(card)
-        layout.setSpacing(15)
+        # Layout اصلی
+        main_layout = QVBoxLayout(card)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(15, 15, 15, 15)
         
-        # ==== هدر: Checkbox + عنوان ====
-        header = QHBoxLayout()
+        # ========== ردیف 1: Checkbox + عنوان ==========
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
         
+        # Checkbox
         checkbox = QCheckBox()
-        checkbox.setFixedSize(25, 25)
+        checkbox.setFixedSize(22, 22)
         checkbox.setStyleSheet("""
             QCheckBox::indicator {
-                width: 25px;
-                height: 25px;
-                border: 3px solid #6c757d;
-                border-radius: 6px;
+                width: 22px;
+                height: 22px;
+                border: 2px solid #6c757d;
+                border-radius: 4px;
                 background: white;
             }
             QCheckBox::indicator:checked {
@@ -238,104 +245,85 @@ class DataViewerWidget(QWidget):
             }
         """)
         checkbox.stateChanged.connect(lambda s: self.on_checkbox_changed(stat['sheet_config_id'], s))
-        header.addWidget(checkbox)
+        header_layout.addWidget(checkbox)
         
+        # عنوان شیت
         title = QLabel(stat['name'])
-        title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {border_color};")
+        title.setFont(QFont("Tahoma", 11, QFont.Weight.Bold))
+        title.setStyleSheet(f"""
+            QLabel {{
+                color: {border_color};
+                background: transparent;
+                padding: 2px;
+            }}
+        """)
         title.setWordWrap(True)
-        header.addWidget(title, 1)
+        title.setMinimumHeight(25)
+        header_layout.addWidget(title, 1)
         
-        layout.addLayout(header)
+        main_layout.addLayout(header_layout)
         
-        # ==== وضعیت ====
-        status_label = QLabel(status)
-        status_label.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        status_label.setStyleSheet(f"color: {border_color}; padding: 8px; background: {border_color}20; border-radius: 6px;")
-        layout.addWidget(status_label)
+        # ========== ردیف 2: وضعیت ==========
+        status = QLabel(status_text)
+        status.setFont(QFont("Tahoma", 9, QFont.Weight.Bold))
+        status.setStyleSheet(f"""
+            QLabel {{
+                color: {border_color};
+                background-color: #f8f9fa;
+                padding: 8px;
+                border-radius: 6px;
+                border: 1px solid {border_color};
+            }}
+        """)
+        status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status.setMinimumHeight(30)
+        main_layout.addWidget(status)
         
-        # ==== تاریخ ====
+        # ========== ردیف 3: تاریخ ==========
         if stat['last_extract']:
             date_str = stat['last_extract'].strftime("%Y/%m/%d - %H:%M")
         else:
             date_str = "استخراج نشده"
         
-        date_label = QLabel(f"🕐 {date_str}")
-        date_label.setFont(QFont("Segoe UI", 9))
-        date_label.setStyleSheet("color: #6c757d; padding: 5px 0;")
-        layout.addWidget(date_label)
+        date = QLabel(f"⏰ {date_str}")
+        date.setFont(QFont("Tahoma", 9))
+        date.setStyleSheet("""
+            QLabel {
+                color: #6c757d;
+                background: transparent;
+                padding: 4px;
+            }
+        """)
+        date.setMinimumHeight(20)
+        main_layout.addWidget(date)
         
-        # ==== خط جدا کننده ====
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet(f"background: {border_color}; max-height: 3px;")
-        layout.addWidget(line)
+        # فضای خالی
+        main_layout.addStretch()
         
-        # ==== آمار - به صورت جدولی ====
-        stats_container = QWidget()
-        stats_layout = QVBoxLayout(stats_container)
-        stats_layout.setSpacing(10)
-        stats_layout.setContentsMargins(10, 10, 10, 10)
-        stats_container.setStyleSheet("background: #f8f9fa; border-radius: 10px; padding: 10px;")
-        
-        # کل
-        total_row = QHBoxLayout()
-        total_row.addWidget(QLabel("📊"), 0)
-        total_lbl = QLabel(f"<b>کل:</b> <span style='font-size:14pt; color:{border_color};'>{stat['total']:,}</span> ردیف")
-        total_lbl.setFont(QFont("Segoe UI", 11))
-        total_row.addWidget(total_lbl, 1)
-        stats_layout.addLayout(total_row)
-        
-        # Export شده
-        exp_row = QHBoxLayout()
-        exp_row.addWidget(QLabel("✅"), 0)
-        exp_lbl = QLabel(f"<b>Export شده:</b> <span style='font-size:13pt; color:{COLORS['success']};'>{stat['exported']:,}</span>")
-        exp_lbl.setFont(QFont("Segoe UI", 11))
-        exp_row.addWidget(exp_lbl, 1)
-        stats_layout.addLayout(exp_row)
-        
-        # Export نشده
-        notexp_row = QHBoxLayout()
-        notexp_row.addWidget(QLabel("❌"), 0)
-        notexp_lbl = QLabel(f"<b>Export نشده:</b> <span style='font-size:13pt; color:{COLORS['danger']};'>{stat['not_exported']:,}</span>")
-        notexp_lbl.setFont(QFont("Segoe UI", 11))
-        notexp_row.addWidget(notexp_lbl, 1)
-        stats_layout.addLayout(notexp_row)
-        
-        # Re-export
-        reexp_row = QHBoxLayout()
-        reexp_row.addWidget(QLabel("⚠️"), 0)
-        reexp_lbl = QLabel(f"<b>نیاز به Re-export:</b> <span style='font-size:13pt; color:{COLORS['warning']};'>{stat['need_reexport']:,}</span>")
-        reexp_lbl.setFont(QFont("Segoe UI", 11))
-        reexp_row.addWidget(reexp_lbl, 1)
-        stats_layout.addLayout(reexp_row)
-        
-        layout.addWidget(stats_container)
-        
-        # ==== فاصله ====
-        layout.addStretch()
-        
-        # ==== دکمه جزئیات ====
-        btn = QPushButton("🔍 مشاهده جزئیات کامل")
-        btn.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        btn.setMinimumHeight(45)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.setStyleSheet(f"""
+        # ========== ردیف 4: دکمه ==========
+        view_btn = QPushButton("📋 مشاهده جزئیات کامل")
+        view_btn.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
+        view_btn.setMinimumHeight(40)
+        view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        view_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {border_color};
+                background-color: {border_color};
                 color: white;
                 border: none;
-                border-radius: 10px;
-                padding: 12px;
+                border-radius: 8px;
+                padding: 10px;
             }}
             QPushButton:hover {{
-                background: {COLORS['primary']};
+                background-color: {COLORS['primary']};
+            }}
+            QPushButton:pressed {{
+                background-color: {COLORS['accent']};
             }}
         """)
-        btn.clicked.connect(lambda: self.show_sheet_details(stat['sheet_config_id']))
-        layout.addWidget(btn)
+        view_btn.clicked.connect(lambda: self.show_sheet_details(stat['sheet_config_id'], stat['name']))
+        main_layout.addWidget(view_btn)
         
-        # ذخیره
+        # ذخیره اطلاعات
         card.checkbox = checkbox
         card.sheet_id = stat['sheet_config_id']
         
@@ -366,56 +354,75 @@ class DataViewerWidget(QWidget):
         self.selected_sheets.clear()
     
     def delete_selected_data(self):
-        """حذف داده‌های انتخاب شده"""
+        """حذف فقط داده‌های استخراج شده (تنظیمات شیت حفظ می‌شود)"""
         if not self.selected_sheets:
             QMessageBox.warning(self, "هشدار", "لطفاً حداقل یک شیت انتخاب کنید")
             return
         
         reply = QMessageBox.question(
-            self, "تأیید حذف",
-            f"آیا از حذف داده‌های {len(self.selected_sheets)} شیت اطمینان دارید؟\n\n"
-            "⚠️ فقط داده‌های استخراج شده حذف می‌شوند، تنظیمات شیت باقی می‌ماند.",
+            self, "🗑️ تأیید حذف داده‌ها",
+            f"آیا از حذف داده‌های {len(self.selected_sheets)} شیت انتخاب شده اطمینان دارید؟\n\n"
+            "✅ فقط داده‌های استخراج شده حذف می‌شوند\n"
+            "✅ تنظیمات شیت حفظ می‌شود\n"
+            "✅ می‌توانید دوباره استخراج کنید",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
+                deleted_count = 0
                 for sheet_id in self.selected_sheets:
-                    self.db_manager.delete_sheet_data(sheet_id)
+                    success, msg = self.db_manager.delete_sheet_data(sheet_id)
+                    if success:
+                        deleted_count += 1
                 
-                QMessageBox.information(self, "موفق", "داده‌ها با موفقیت حذف شدند")
+                QMessageBox.information(
+                    self, "✅ موفق", 
+                    f"داده‌های {deleted_count} شیت با موفقیت حذف شدند\n\n"
+                    "تنظیمات شیت‌ها حفظ شده است"
+                )
                 self.load_sheets()
             except Exception as e:
                 QMessageBox.critical(self, "خطا", f"خطا در حذف: {str(e)}")
     
     def delete_selected_sheets(self):
-        """حذف کامل شیت‌ها"""
+        """حذف کامل شیت‌ها (داده‌ها + تنظیمات)"""
         if not self.selected_sheets:
             QMessageBox.warning(self, "هشدار", "لطفاً حداقل یک شیت انتخاب کنید")
             return
         
         reply = QMessageBox.critical(
-            self, "⚠️ تأیید حذف کامل",
-            f"💣 آیا از حذف کامل {len(self.selected_sheets)} شیت اطمینان دارید؟\n\n"
-            "❗ تمام داده‌ها و تنظیمات شیت برای همیشه حذف می‌شوند!\n"
-            "این عملیات قابل بازگشت نیست!",
+            self, "💣 ⚠️ تأیید حذف کامل",
+            f"❗❗❗ آیا از حذف کامل {len(self.selected_sheets)} شیت اطمینان دارید؟ ❗❗❗\n\n"
+            "⛔ تمام داده‌های استخراج شده حذف می‌شوند\n"
+            "⛔ تنظیمات شیت‌ها حذف می‌شوند\n"
+            "⛔ باید دوباره شیت‌ها را تعریف کنید\n"
+            "⛔ این عملیات قابل بازگشت نیست!\n\n"
+            "⚠️ برای حذف فقط داده‌ها از دکمه 'حذف فقط داده‌ها' استفاده کنید",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
+                deleted_count = 0
                 for sheet_id in self.selected_sheets:
-                    self.db_manager.delete_sheet_config(sheet_id)
+                    success, msg = self.db_manager.delete_sheet_config(sheet_id)
+                    if success:
+                        deleted_count += 1
                 
-                QMessageBox.information(self, "موفق", "شیت‌ها با موفقیت حذف شدند")
+                QMessageBox.information(
+                    self, "✅ حذف شد", 
+                    f"{deleted_count} شیت به طور کامل حذف شدند\n\n"
+                    "برای استفاده مجدد باید شیت‌ها را دوباره تعریف کنید"
+                )
                 self.load_sheets()
             except Exception as e:
                 QMessageBox.critical(self, "خطا", f"خطا در حذف: {str(e)}")
     
-    def show_sheet_details(self, sheet_id):
+    def show_sheet_details(self, sheet_id, sheet_name):
         """نمایش جزئیات کامل شیت"""
         from app.gui.dialogs.sheet_details_dialog import SheetDetailsDialog
-        dialog = SheetDetailsDialog(sheet_id, self)
+        dialog = SheetDetailsDialog(sheet_id, sheet_name, self)
         dialog.exec()
         self.load_sheets()  # Refresh
     

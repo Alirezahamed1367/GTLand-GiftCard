@@ -112,22 +112,49 @@ class GoogleSheetExtractor:
                 self.logger.warning("شیت خالی است یا فقط هدر دارد")
                 return []
             headers = all_values[0]
+            self.logger.info(f"📊 هدرهای یافت شده: {headers}")
             self.logger.info(f"تعداد کل ردیف‌ها: {len(all_values) - 1}")
+            
+            # پیدا کردن ستون آماده (Ready) با جستجوی هوشمند
             try:
                 ready_col_idx = column_letter_to_index(ready_column)
+                self.logger.info(f"✅ ستون آماده از طریق حرف: {ready_column} -> index {ready_col_idx}")
             except:
-                try:
-                    ready_col_idx = headers.index(ready_column)
-                except ValueError:
-                    self.logger.error(f"ستون آماده '{ready_column}' یافت نشد!")
+                # جستجوی case-insensitive و trim شده
+                ready_col_idx = -1
+                ready_column_lower = ready_column.strip().lower()
+                
+                for idx, header in enumerate(headers):
+                    header_clean = str(header).strip().lower()
+                    if header_clean == ready_column_lower:
+                        ready_col_idx = idx
+                        self.logger.info(f"✅ ستون آماده پیدا شد: '{header}' (index {idx})")
+                        break
+                
+                if ready_col_idx == -1:
+                    self.logger.error(f"❌ ستون آماده '{ready_column}' یافت نشد!")
+                    self.logger.error(f"📋 هدرهای موجود: {headers}")
                     return []
+            
+            # پیدا کردن ستون استخراج شده (Extracted) با جستجوی هوشمند
             try:
                 extracted_col_idx = column_letter_to_index(extracted_column)
+                self.logger.info(f"✅ ستون استخراج از طریق حرف: {extracted_column} -> index {extracted_col_idx}")
             except:
-                try:
-                    extracted_col_idx = headers.index(extracted_column)
-                except ValueError:
-                    self.logger.error(f"ستون استخراج '{extracted_column}' یافت نشد!")
+                # جستجوی case-insensitive و trim شده
+                extracted_col_idx = -1
+                extracted_column_lower = extracted_column.strip().lower()
+                
+                for idx, header in enumerate(headers):
+                    header_clean = str(header).strip().lower()
+                    if header_clean == extracted_column_lower:
+                        extracted_col_idx = idx
+                        self.logger.info(f"✅ ستون استخراج پیدا شد: '{header}' (index {idx})")
+                        break
+                
+                if extracted_col_idx == -1:
+                    self.logger.error(f"❌ ستون استخراج '{extracted_column}' یافت نشد!")
+                    self.logger.error(f"📋 هدرهای موجود: {headers}")
                     return []
             if columns_to_extract:
                 col_indices, col_names = [], []
