@@ -79,14 +79,27 @@ class GoogleSheetExtractor:
             return []
     
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-    def extract_ready_rows(self, sheet_url, worksheet_name, ready_column, extracted_column, columns_to_extract=None, skip_rows=0, max_rows=None):
+    def extract_ready_rows(self, sheet_url, worksheet_name, ready_column, extracted_column, columns_to_extract=None, skip_rows=0, max_rows=None, log_callback=None):
+        """
+        استخراج ردیف‌های آماده از Google Sheets
+        
+        Args:
+            log_callback: تابع اختیاری (message, level) برای ارسال لاگ به UI
+        """
         try:
-            self.logger.info(f"📄 در حال باز کردن worksheet: '{worksheet_name}'")
+            msg = f"📄 در حال باز کردن worksheet: '{worksheet_name}'"
+            self.logger.info(msg)
+            if log_callback:
+                log_callback(msg, "info")
+            
             sheet = self.client.open_by_url(sheet_url)
             
             # لیست تمام worksheetها را لاگ کن
             all_worksheets = [ws.title for ws in sheet.worksheets()]
-            self.logger.info(f"📋 لیست worksheetهای موجود: {all_worksheets}")
+            msg = f"📋 لیست worksheetهای موجود: {all_worksheets}"
+            self.logger.info(msg)
+            if log_callback:
+                log_callback(msg, "info")
             
             # جستجوی case-insensitive برای worksheet
             if worksheet_name:
@@ -107,13 +120,27 @@ class GoogleSheetExtractor:
                 worksheet = sheet.sheet1
             
             self.logger.info(f"✅ Worksheet '{worksheet.title}' باز شد")
+            if log_callback:
+                log_callback(f"✅ Worksheet '{worksheet.title}' باز شد", "success")
+            
             all_values = worksheet.get_all_values()
             if not all_values or len(all_values) < 2:
-                self.logger.warning("شیت خالی است یا فقط هدر دارد")
+                msg = "⚠️ شیت خالی است یا فقط هدر دارد"
+                self.logger.warning(msg)
+                if log_callback:
+                    log_callback(msg, "warning")
                 return []
+            
             headers = all_values[0]
-            self.logger.info(f"📊 هدرهای یافت شده: {headers}")
-            self.logger.info(f"تعداد کل ردیف‌ها: {len(all_values) - 1}")
+            msg = f"📊 هدرهای یافت شده: {headers}"
+            self.logger.info(msg)
+            if log_callback:
+                log_callback(msg, "info")
+            
+            msg = f"📏 تعداد کل ردیف‌ها: {len(all_values) - 1:,}"
+            self.logger.info(msg)
+            if log_callback:
+                log_callback(msg, "info")
             
             # ==================== پیدا کردن ستون آماده (Ready) ====================
             ready_col_idx = -1
@@ -124,7 +151,10 @@ class GoogleSheetExtractor:
                 header_clean = str(header).strip().lower()
                 if header_clean == ready_column_clean:
                     ready_col_idx = idx
-                    self.logger.info(f"✅ ستون آماده پیدا شد با نام: '{header}' (index {idx})")
+                    msg = f"✅ ستون آماده پیدا شد با نام: '{header}' (index {idx})"
+                    self.logger.info(msg)
+                    if log_callback:
+                        log_callback(msg, "success")
                     break
             
             # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
@@ -152,7 +182,10 @@ class GoogleSheetExtractor:
                 header_clean = str(header).strip().lower()
                 if header_clean == extracted_column_clean:
                     extracted_col_idx = idx
-                    self.logger.info(f"✅ ستون استخراج پیدا شد با نام: '{header}' (index {idx})")
+                    msg = f"✅ ستون استخراج پیدا شد با نام: '{header}' (index {idx})"
+                    self.logger.info(msg)
+                    if log_callback:
+                        log_callback(msg, "success")
                     break
             
             # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
@@ -205,12 +238,20 @@ class GoogleSheetExtractor:
                 if is_ready and not is_extracted:
                     row_data = {}
                     for idx, col_name in zip(col_indices, col_names):
-                        row_data[col_name] = row_values[idx] if idx < len(row_values) else ""
+                        row_data[col_name] = row_data.get(col_name, row_values[idx] if idx < len(row_values) else "")
                     ready_rows.append({"row_number": row_idx, "data": row_data})
-            self.logger.success(f" {len(ready_rows)} ردیف آماده یافت شد")
+            
+            msg = f"✅ {len(ready_rows):,} ردیف آماده یافت شد"
+            self.logger.success(msg)
+            if log_callback:
+                log_callback(msg, "success")
+            
             return ready_rows
         except Exception as e:
-            self.logger.error(f"خطا در استخراج از worksheet '{worksheet_name}': {str(e)}")
+            msg = f"❌ خطا در استخراج از worksheet '{worksheet_name}': {str(e)}"
+            self.logger.error(msg)
+            if log_callback:
+                log_callback(msg, "error")
             import traceback
             self.logger.error(f"جزئیات خطا: {traceback.format_exc()}")
             return []
@@ -405,7 +446,7 @@ class GoogleSheetExtractor:
         
         return False
     
-    def extract_and_save(self, sheet_config_id: int, auto_update: bool = False, progress_callback=None) -> Tuple[bool, str, Dict]:
+    def extract_and_save(self, sheet_config_id: int, auto_update: bool = False, progress_callback=None, log_callback=None) -> Tuple[bool, str, Dict]:
         """
         استخراج و ذخیره داده از یک شیت با گزارش پیشرفت دقیق
         
@@ -413,6 +454,7 @@ class GoogleSheetExtractor:
             sheet_config_id: شناسه تنظیمات شیت
             auto_update: بروزرسانی خودکار بدون تایید کاربر
             progress_callback: تابع (current, total, message) برای گزارش پیشرفت
+            log_callback: تابع (message, level) برای ارسال لاگ به UI
             
         Returns:
             (موفقیت, پیام, آمار کامل)
@@ -437,12 +479,16 @@ class GoogleSheetExtractor:
             if progress_callback:
                 progress_callback(10, 100, "اتصال به Google Sheets")
             
+            if log_callback:
+                log_callback("🔗 اتصال به Google Sheets برقرار شد", "success")
+            
             ready_rows = self.extract_ready_rows(
                 sheet_url=sheet_config.sheet_url,
                 worksheet_name=sheet_config.worksheet_name or 'Sheet1',
                 ready_column=sheet_config.ready_column,
                 extracted_column=sheet_config.extracted_column,
-                columns_to_extract=sheet_config.columns_to_extract
+                columns_to_extract=sheet_config.columns_to_extract,
+                log_callback=log_callback
             )
             
             if not ready_rows:

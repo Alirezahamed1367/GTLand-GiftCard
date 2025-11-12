@@ -24,6 +24,7 @@ class ExtractionThread(QThread):
     progress = pyqtSignal(int, str, str)  # (درصد, پیام, رنگ)
     log = pyqtSignal(str, str)  # (پیام, سطح: info/success/warning/error)
     sub_progress = pyqtSignal(int, int, str)  # (فعلی, کل, پیام) برای نوار پیشرفت جزئی
+    stats_update = pyqtSignal(dict)  # آمار لحظه‌ای
     finished = pyqtSignal(bool, str, dict)
     
     def __init__(self, selected_sheet_ids=None):
@@ -44,13 +45,13 @@ class ExtractionThread(QThread):
             from datetime import datetime
             start_time = datetime.now()
             
-            self.progress.emit(5, "🚀 شروع عملیات استخراج...", "#2196F3")
+            self.progress.emit(0, "🚀 شروع عملیات استخراج...", "#2196F3")
             self.log.emit("="*60, "info")
             self.log.emit(f"🕐 زمان شروع: {start_time.strftime('%Y/%m/%d - %H:%M:%S')}", "info")
             self.log.emit("="*60, "info")
             
             # دریافت شیت‌های فعال
-            self.progress.emit(10, "دریافت لیست شیت‌ها...", "#2196F3")
+            self.progress.emit(3, "دریافت لیست شیت‌ها...", "#2196F3")
             self.log.emit("\n🔍 دریافت لیست شیت‌های فعال از دیتابیس...", "info")
             
             all_configs = db_manager.get_all_sheet_configs(active_only=True)
@@ -87,7 +88,7 @@ class ExtractionThread(QThread):
                     self.log.emit("\n⛔ عملیات توسط کاربر لغو شد", "warning")
                     break
                 
-                progress_pct = 10 + int((idx / len(configs)) * 85)
+                progress_pct = 5 + int((idx / len(configs)) * 90)
                 self.progress.emit(
                     progress_pct,
                     f"در حال استخراج از '{config.name}' ({idx+1}/{len(configs)})",
@@ -100,6 +101,9 @@ class ExtractionThread(QThread):
                 self.log.emit(f"📄 Worksheet: {config.worksheet_name}", "info")
                 self.log.emit("─"*60, "info")
                 
+                # لاگ مراحل اتصال
+                self.log.emit("🔌 در حال اتصال به Google Sheets...", "info")
+                
                 try:
                     # استخراج با callback برای گزارش پیشرفت
                     def progress_callback(current, total, message):
@@ -107,10 +111,18 @@ class ExtractionThread(QThread):
                         if current % 100 == 0 or current == total:
                             self.log.emit(f"  📥 استخراج: {current:,}/{total:,} - {message}", "info")
                     
+                    # callback برای لاگ‌ها
+                    def log_callback(message, level):
+                        self.log.emit(f"  {message}", level)
+                    
+                    # لاگ قبل از استخراج
+                    self.log.emit(f"📥 در حال خواندن داده‌ها از worksheet '{config.worksheet_name}'...", "info")
+                    
                     success, message, stats = self.extractor.extract_and_save(
                         config.id, 
                         auto_update=False,
-                        progress_callback=progress_callback
+                        progress_callback=progress_callback,
+                        log_callback=log_callback
                     )
                     
                     if success:
@@ -143,6 +155,16 @@ class ExtractionThread(QThread):
                             f"{extracted:,} ردیف استخراج شد",
                             "success"
                         )
+                        
+                        # ارسال آمار لحظه‌ای
+                        self.stats_update.emit({
+                            'sheets_processed': idx + 1,
+                            'sheets_total': len(configs),
+                            'new_records': total_new,
+                            'updated_records': total_updated,
+                            'duplicates': len(all_duplicates),
+                            'errors': total_errors
+                        })
                     else:
                         total_errors += 1
                         self.log.emit(f"  ❌ خطا: {message}", "error")
@@ -255,7 +277,7 @@ class ExtractionThread(QThread):
         """اجرای استخراج"""
         try:
             self.progress.emit(10, "دریافت لیست شیت‌ها...", "#2196F3")
-            self.log.emit("🔍 دریافت لیست شیت‌های انتخابی...")
+            self.log.emit("🔍 دریافت لیست شیت‌های انتخابی...", "info")
             
             # دریافت شیت‌های فعال
             all_configs = db_manager.get_all_sheet_configs(active_only=True)
@@ -270,10 +292,10 @@ class ExtractionThread(QThread):
                 if not configs:
                     self.finished.emit(False, "هیچ شیتی انتخاب نشده است!", {})
                     return
-                self.log.emit(f"✅ تعداد {len(configs)} شیت انتخاب شده از {len(all_configs)} شیت فعال")
+                self.log.emit(f"✅ تعداد {len(configs)} شیت انتخاب شده از {len(all_configs)} شیت فعال", "success")
             else:
                 configs = all_configs
-                self.log.emit(f"✅ استخراج از همه شیت‌های فعال ({len(configs)} شیت)")
+                self.log.emit(f"✅ استخراج از همه شیت‌های فعال ({len(configs)} شیت)", "success")
             
             total_new = 0
             total_updated = 0
@@ -288,7 +310,7 @@ class ExtractionThread(QThread):
                     f"استخراج از '{config.name}'...",
                     "#4CAF50"
                 )
-                self.log.emit(f"\n📊 شروع استخراج از '{config.name}'...")
+                self.log.emit(f"\n📊 شروع استخراج از '{config.name}'...", "info")
                 
                 try:
                     # استخراج (بدون بروزرسانی خودکار)
@@ -302,19 +324,20 @@ class ExtractionThread(QThread):
                         duplicates = stats.get('duplicates', [])
                         if duplicates:
                             all_duplicates.extend(duplicates)
-                            self.log.emit(f"  ⚠️ {len(duplicates)} ردیف تکراری شناسایی شد")
+                            self.log.emit(f"  ⚠️ {len(duplicates)} ردیف تکراری شناسایی شد", "warning")
                         
                         self.log.emit(
                             f"  ✅ موفق: {stats.get('new_records', 0)} جدید، "
-                            f"{stats.get('updated_records', 0)} بروز شد"
+                            f"{stats.get('updated_records', 0)} بروز شد",
+                            "success"
                         )
                     else:
                         total_errors += 1
-                        self.log.emit(f"  ❌ خطا: {message}")
+                        self.log.emit(f"  ❌ خطا: {message}", "error")
                 
                 except Exception as e:
                     total_errors += 1
-                    self.log.emit(f"  ❌ خطا: {str(e)}")
+                    self.log.emit(f"  ❌ خطا: {str(e)}", "error")
                     self.logger.error(f"خطا در استخراج از {config.name}: {str(e)}")
             
             # خلاصه نتایج
@@ -328,14 +351,14 @@ class ExtractionThread(QThread):
                 'duplicates': all_duplicates  # لیست کامل تکراری‌ها
             }
             
-            self.log.emit("\n" + "="*50)
-            self.log.emit("📋 خلاصه نتایج:")
-            self.log.emit(f"  • شیت‌های پردازش شده: {len(configs)}")
-            self.log.emit(f"  • رکوردهای جدید: {total_new:,}")
-            self.log.emit(f"  • رکوردهای بروز شده: {total_updated:,}")
-            self.log.emit(f"  • تکراری‌ها (نیاز به بررسی): {len(all_duplicates):,}")
-            self.log.emit(f"  • خطاها: {total_errors}")
-            self.log.emit("="*50)
+            self.log.emit("\n" + "="*50, "info")
+            self.log.emit("📋 خلاصه نتایج:", "info")
+            self.log.emit(f"  • شیت‌های پردازش شده: {len(configs)}", "info")
+            self.log.emit(f"  • رکوردهای جدید: {total_new:,}", "success" if total_new > 0 else "info")
+            self.log.emit(f"  • رکوردهای بروز شده: {total_updated:,}", "info")
+            self.log.emit(f"  • تکراری‌ها (نیاز به بررسی): {len(all_duplicates):,}", "warning" if len(all_duplicates) > 0 else "info")
+            self.log.emit(f"  • خطاها: {total_errors}", "error" if total_errors > 0 else "success")
+            self.log.emit("="*50, "info")
             
             # ثبت لاگ عملیات
             try:
@@ -366,9 +389,9 @@ class ExtractionThread(QThread):
                 db.add(process_log)
                 db.commit()
                 db.close()
-                self.log.emit(f"✅ لاگ عملیات ثبت شد (ID: {process_log.id})")
+                self.log.emit(f"✅ لاگ عملیات ثبت شد (ID: {process_log.id})", "success")
             except Exception as log_error:
-                self.log.emit(f"⚠️ خطا در ثبت لاگ: {log_error}")
+                self.log.emit(f"⚠️ خطا در ثبت لاگ: {log_error}", "warning")
             
             if total_new > 0 or total_updated > 0 or all_duplicates:
                 msg = f"✅ استخراج موفق!\n{total_new:,} رکورد جدید، {total_updated:,} بروز شد"
@@ -742,7 +765,7 @@ class ExtractionWidget(QWidget):
             self.stats_label.setText(f"❌ خطا در بارگذاری آمار: {str(e)}")
     
     def start_extraction(self):
-        """شروع استخراج"""
+        """شروع استخراج با باز کردن پنجره لاگ زنده"""
         # بررسی شیت‌های فعال
         configs = db_manager.get_all_sheet_configs(active_only=True)
         
@@ -790,21 +813,51 @@ class ExtractionWidget(QWidget):
         self.start_btn.setEnabled(False)
         self.start_btn.setText("⏳ در حال استخراج...")
         
-        # پاک کردن لاگ
-        self.log_text.clear()
-        self.progress_bar.setValue(0)
-        
         # ایجاد thread با شیت‌های انتخابی
         self.extraction_thread = ExtractionThread(selected_sheet_ids=selected_sheet_ids)
         
-        # اتصال سیگنال‌ها
+        # ایجاد پنجره لاگ زنده قبل از شروع thread
+        from app.gui.dialogs.live_log_dialog import LiveLogDialog
+        
+        log_dialog = LiveLogDialog(self)
+        log_dialog.extraction_thread = self.extraction_thread
+        log_dialog.stats['sheets_total'] = selected_count
+        log_dialog.update_stats({})
+        
+        # اتصال سیگنال‌ها به پنجره لاگ
+        self.extraction_thread.progress.connect(log_dialog.update_progress)
+        self.extraction_thread.log.connect(log_dialog.append_log)
+        self.extraction_thread.sub_progress.connect(log_dialog.update_sub_progress)
+        self.extraction_thread.stats_update.connect(log_dialog.update_stats)
+        
+        # اتصال سیگنال‌ها به ویجت اصلی (برای بروزرسانی UI)
         self.extraction_thread.progress.connect(self.on_progress)
         self.extraction_thread.log.connect(self.on_log)
         self.extraction_thread.sub_progress.connect(self.on_sub_progress)
-        self.extraction_thread.finished.connect(self.on_finished)
         
-        # شروع
+        # اتصال finished
+        def on_extraction_complete(success, message, summary):
+            log_dialog.on_extraction_finished()
+            # بروزرسانی آمار نهایی
+            log_dialog.update_stats({
+                'sheets_processed': summary.get('total_configs', 0),
+                'new_records': summary.get('new_records', 0),
+                'updated_records': summary.get('updated_records', 0),
+                'duplicates': len(summary.get('duplicates', [])),
+                'errors': summary.get('errors', 0)
+            })
+            self.on_finished(success, message, summary)
+        
+        self.extraction_thread.finished.connect(on_extraction_complete)
+        
+        # نمایش پنجره لاگ
+        log_dialog.show()
+        
+        # شروع thread بعد از نمایش پنجره
         self.extraction_thread.start()
+        
+        # اجرای event loop برای پنجره modal
+        log_dialog.exec()
     
     def on_progress(self, value, message, color):
         """بروزرسانی پیشرفت اصلی"""
