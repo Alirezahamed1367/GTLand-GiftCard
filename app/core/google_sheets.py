@@ -131,7 +131,10 @@ class GoogleSheetExtractor:
                     log_callback(msg, "warning")
                 return []
             
+            # پاک‌سازی هدرها: حذف علامت تیک و فضای خالی
             headers = all_values[0]
+            headers = [str(h).strip().replace('✓', '').replace('✔', '').replace('☑', '').replace('✅', '').strip() for h in headers]
+            
             msg = f"📊 هدرهای یافت شده: {headers}"
             self.logger.info(msg)
             if log_callback:
@@ -501,7 +504,10 @@ class GoogleSheetExtractor:
                 }
             
             total_rows = len(ready_rows)
-            self.logger.info(f"📥 {total_rows:,} ردیف آماده برای پردازش")
+            msg = f"📥 {total_rows:,} ردیف آماده برای پردازش"
+            self.logger.info(msg)
+            if log_callback:
+                log_callback(msg, "info")
             
             if progress_callback:
                 progress_callback(20, 100, f"پردازش {total_rows:,} ردیف")
@@ -510,10 +516,16 @@ class GoogleSheetExtractor:
             from app.utils.change_detector import ChangeDetector
             from app.utils.unique_key_generator import generate_unique_key
             
+            if log_callback:
+                log_callback("🔍 بررسی تغییرات و تکراری‌ها...", "info")
+            
             warnings = []
             existing_data_list = db_manager.get_sales_data_by_sheet_config(sheet_config_id)
             
             if existing_data_list:
+                if log_callback:
+                    log_callback(f"📊 {len(existing_data_list):,} رکورد موجود در دیتابیس", "info")
+                
                 detector = ChangeDetector()
                 old_data = [
                     {'row_number': item.row_number, 'data': item.data}
@@ -530,14 +542,29 @@ class GoogleSheetExtractor:
                     warning_report = detector.generate_warning_report(changes)
                     warnings.append(warning_report)
                     self.logger.warning(warning_report)
+                    if log_callback:
+                        log_callback(f"⚠️ تغییرات شناسایی شد: {change_stats}", "warning")
+            else:
+                if log_callback:
+                    log_callback("📊 هیچ رکورد قبلی در دیتابیس یافت نشد (اولین استخراج)", "info")
             
             # ذخیره در دیتابیس
+            if log_callback:
+                log_callback("💾 شروع ذخیره رکوردها در دیتابیس...", "info")
+            
             new_count = 0
             updated_count = 0
             duplicate_list = []  # لیست تکراری‌ها برای بررسی بعدی
             rows_to_mark = []  # ردیف‌هایی که باید علامت بخورند
             
-            for row in ready_rows:
+            for idx, row in enumerate(ready_rows):
+                if progress_callback and idx % 100 == 0:
+                    progress_callback(
+                        30 + int((idx / total_rows) * 50),
+                        100,
+                        f"پردازش {idx+1:,} از {total_rows:,}"
+                    )
+                
                 # ✨ ساخت کلید یکتا با سیستم جدید
                 unique_key = generate_unique_key(
                     sheet_config_id=sheet_config_id,

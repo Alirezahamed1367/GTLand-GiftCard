@@ -24,10 +24,11 @@ class LiveLogDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("📊 لاگ زنده عملیات استخراج")
-        self.setMinimumSize(1000, 700)
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMaximizeButtonHint)
+        self.setMinimumSize(1100, 750)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMaximizeButtonHint | Qt.WindowType.WindowCloseButtonHint)
         
         self.is_cancelled = False
+        self.is_finished = False
         self.extraction_thread = None
         
         self.setup_ui()
@@ -35,87 +36,86 @@ class LiveLogDialog(QDialog):
     def setup_ui(self):
         """راه‌اندازی رابط کاربری"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
-        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(8)
+        layout.setContentsMargins(10, 10, 10, 10)
         
-        # ========== هدر ==========
+        # ========== هدر (کوچک‌تر) ==========
         header_frame = QFrame()
         header_frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #667eea, stop:1 #764ba2);
-                border-radius: 10px;
-                padding: 15px;
+                border-radius: 8px;
+                padding: 8px;
             }
         """)
-        header_layout = QVBoxLayout(header_frame)
-        header_layout.setSpacing(8)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setSpacing(10)
         
-        title_label = QLabel("🚀 سیستم نظارت زنده عملیات")
-        title_label.setFont(QFont("Tahoma", 16, QFont.Weight.Bold))
+        title_label = QLabel("🚀 لاگ زنده")
+        title_label.setFont(QFont("Tahoma", 12, QFont.Weight.Bold))
         title_label.setStyleSheet("color: white;")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(title_label)
         
-        self.time_label = QLabel(f"⏰ شروع: {datetime.now().strftime('%Y/%m/%d - %H:%M:%S')}")
-        self.time_label.setFont(QFont("Tahoma", 10))
+        header_layout.addStretch()
+        
+        self.time_label = QLabel(f"⏰ {datetime.now().strftime('%H:%M:%S')}")
+        self.time_label.setFont(QFont("Tahoma", 9))
         self.time_label.setStyleSheet("color: #f0f0f0;")
-        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header_layout.addWidget(self.time_label)
         
         layout.addWidget(header_frame)
         
-        # ========== نوار وضعیت ==========
+        # ========== نوار وضعیت (کوچک‌تر) ==========
         status_frame = QFrame()
         status_frame.setStyleSheet("""
             QFrame {
                 background-color: white;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                padding: 10px;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                padding: 6px;
             }
         """)
         status_layout = QVBoxLayout(status_frame)
-        status_layout.setSpacing(8)
+        status_layout.setSpacing(5)
         
         # وضعیت فعلی
         self.status_label = QLabel("⏳ در حال آماده‌سازی...")
-        self.status_label.setFont(QFont("Tahoma", 11, QFont.Weight.Bold))
+        self.status_label.setFont(QFont("Tahoma", 9))
         self.status_label.setStyleSheet("color: #2196F3;")
         status_layout.addWidget(self.status_label)
         
         # نوار پیشرفت اصلی
         progress_container = QHBoxLayout()
-        progress_container.setSpacing(10)
+        progress_container.setSpacing(8)
         
         self.main_progress_bar = QProgressBar()
         self.main_progress_bar.setMinimum(0)
         self.main_progress_bar.setMaximum(100)
         self.main_progress_bar.setValue(0)
         self.main_progress_bar.setTextVisible(True)
-        self.main_progress_bar.setFormat("پیشرفت کلی: %p%")
+        self.main_progress_bar.setFormat("%p%")
         self.main_progress_bar.setStyleSheet("""
             QProgressBar {
-                border: 2px solid #2196F3;
-                border-radius: 8px;
+                border: 1px solid #2196F3;
+                border-radius: 6px;
                 text-align: center;
-                font-size: 11pt;
-                font-weight: bold;
+                font-size: 9pt;
                 font-family: 'Tahoma';
                 background-color: white;
-                height: 30px;
+                height: 22px;
             }
             QProgressBar::chunk {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #667eea, stop:1 #764ba2);
-                border-radius: 6px;
+                border-radius: 5px;
             }
         """)
         progress_container.addWidget(self.main_progress_bar)
         
         self.progress_label = QLabel("0%")
-        self.progress_label.setFont(QFont("Tahoma", 12, QFont.Weight.Bold))
-        self.progress_label.setStyleSheet("color: #667eea; min-width: 50px;")
+        self.progress_label.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
+        self.progress_label.setStyleSheet("color: #667eea; min-width: 45px;")
         self.progress_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         progress_container.addWidget(self.progress_label)
         
@@ -123,24 +123,24 @@ class LiveLogDialog(QDialog):
         
         # نوار پیشرفت جزئی
         self.sub_progress_label = QLabel("")
-        self.sub_progress_label.setFont(QFont("Tahoma", 9))
+        self.sub_progress_label.setFont(QFont("Tahoma", 8))
         self.sub_progress_label.setStyleSheet("color: #666;")
         status_layout.addWidget(self.sub_progress_label)
         
         layout.addWidget(status_frame)
         
-        # ========== آمار لحظه‌ای ==========
+        # ========== آمار لحظه‌ای (کوچک‌تر) ==========
         stats_frame = QFrame()
         stats_frame.setStyleSheet("""
             QFrame {
                 background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 8px;
-                padding: 10px;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                padding: 6px;
             }
         """)
         stats_layout = QHBoxLayout(stats_frame)
-        stats_layout.setSpacing(15)
+        stats_layout.setSpacing(10)
         
         # شیت‌های پردازش شده
         self.sheets_stat = self._create_stat_widget("📁", "شیت‌ها", "0/0", "#2196F3")
@@ -164,11 +164,7 @@ class LiveLogDialog(QDialog):
         
         layout.addWidget(stats_frame)
         
-        # ========== ناحیه لاگ ==========
-        log_label = QLabel("📝 لاگ جزئیات عملیات:")
-        log_label.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
-        layout.addWidget(log_label)
-        
+        # ========== ناحیه لاگ (بزرگتر) ==========
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setFont(QFont("Consolas", 9))
@@ -176,8 +172,8 @@ class LiveLogDialog(QDialog):
             QTextEdit {
                 background-color: #1e1e1e;
                 color: #d4d4d4;
-                border: 2px solid #3c3c3c;
-                border-radius: 8px;
+                border: 1px solid #3c3c3c;
+                border-radius: 6px;
                 padding: 10px;
                 font-family: 'Consolas', 'Courier New', monospace;
                 line-height: 1.4;
@@ -202,16 +198,16 @@ class LiveLogDialog(QDialog):
         buttons_layout.setSpacing(10)
         
         # دکمه توقف
-        self.stop_btn = QPushButton("⏸️ توقف عملیات")
-        self.stop_btn.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
-        self.stop_btn.setMinimumHeight(40)
+        self.stop_btn = QPushButton("⏸️ توقف")
+        self.stop_btn.setFont(QFont("Tahoma", 9, QFont.Weight.Bold))
+        self.stop_btn.setMinimumHeight(32)
         self.stop_btn.setStyleSheet("""
             QPushButton {
                 background-color: #F44336;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
+                border-radius: 6px;
+                padding: 8px 16px;
             }
             QPushButton:hover {
                 background-color: #D32F2F;
@@ -226,16 +222,16 @@ class LiveLogDialog(QDialog):
         buttons_layout.addStretch()
         
         # دکمه ذخیره لاگ
-        save_btn = QPushButton("💾 ذخیره لاگ")
-        save_btn.setFont(QFont("Tahoma", 10))
-        save_btn.setMinimumHeight(40)
+        save_btn = QPushButton("💾 ذخیره")
+        save_btn.setFont(QFont("Tahoma", 9))
+        save_btn.setMinimumHeight(32)
         save_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2196F3;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
+                border-radius: 6px;
+                padding: 8px 16px;
             }
             QPushButton:hover {
                 background-color: #1976D2;
@@ -245,16 +241,16 @@ class LiveLogDialog(QDialog):
         buttons_layout.addWidget(save_btn)
         
         # دکمه پاک کردن
-        clear_btn = QPushButton("🗑️ پاک کردن")
-        clear_btn.setFont(QFont("Tahoma", 10))
-        clear_btn.setMinimumHeight(40)
+        clear_btn = QPushButton("🗑️ پاک")
+        clear_btn.setFont(QFont("Tahoma", 9))
+        clear_btn.setMinimumHeight(32)
         clear_btn.setStyleSheet("""
             QPushButton {
                 background-color: #757575;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
+                border-radius: 6px;
+                padding: 8px 16px;
             }
             QPushButton:hover {
                 background-color: #616161;
@@ -265,16 +261,16 @@ class LiveLogDialog(QDialog):
         
         # دکمه بستن
         self.close_btn = QPushButton("✖️ بستن")
-        self.close_btn.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
-        self.close_btn.setMinimumHeight(40)
+        self.close_btn.setFont(QFont("Tahoma", 9, QFont.Weight.Bold))
+        self.close_btn.setMinimumHeight(32)
         self.close_btn.setEnabled(False)
         self.close_btn.setStyleSheet("""
             QPushButton {
                 background-color: #4CAF50;
                 color: white;
                 border: none;
-                border-radius: 8px;
-                padding: 10px 20px;
+                border-radius: 6px;
+                padding: 8px 16px;
             }
             QPushButton:hover {
                 background-color: #388E3C;
@@ -413,20 +409,31 @@ class LiveLogDialog(QDialog):
         self._update_stat_widget(self.error_stat, f"{self.stats['errors']}")
     
     def stop_extraction(self):
-        """توقف عملیات"""
+        """توقف سریع عملیات"""
+        if self.is_cancelled or self.is_finished:
+            return
+        
         self.is_cancelled = True
+        self.append_log("⛔ درخواست توقف توسط کاربر - عملیات در حال لغو...", "warning")
+        
         if self.extraction_thread:
             self.extraction_thread.cancel()
-        self.append_log("⚠️ درخواست توقف توسط کاربر...", "warning")
+            self.extraction_thread.terminate()  # توقف فوری thread
+        
         self.stop_btn.setEnabled(False)
+        self.stop_btn.setText("⏸️ در حال توقف...")
+        
+        # فعال کردن دکمه بستن
+        self.close_btn.setEnabled(True)
+        self.status_label.setText("⛔ عملیات متوقف شد")
+        self.status_label.setStyleSheet("color: #F44336;")
     
     def on_extraction_finished(self):
         """پایان عملیات"""
+        self.is_finished = True
         self.stop_btn.setEnabled(False)
         self.close_btn.setEnabled(True)
-        self.time_label.setText(
-            f"⏰ پایان: {datetime.now().strftime('%Y/%m/%d - %H:%M:%S')}"
-        )
+        self.time_label.setText(f"⏰ {datetime.now().strftime('%H:%M:%S')}")
     
     def save_log(self):
         """ذخیره لاگ در فایل"""
