@@ -813,51 +813,27 @@ class ExtractionWidget(QWidget):
         self.start_btn.setEnabled(False)
         self.start_btn.setText("⏳ در حال استخراج...")
         
+        # پاک کردن لاگ قبلی
+        self.log_text.clear()
+        self.progress_bar.setValue(0)
+        
         # ایجاد thread با شیت‌های انتخابی
         self.extraction_thread = ExtractionThread(selected_sheet_ids=selected_sheet_ids)
         
-        # ایجاد پنجره لاگ زنده قبل از شروع thread
-        from app.gui.dialogs.live_log_dialog import LiveLogDialog
-        
-        log_dialog = LiveLogDialog(self)
-        log_dialog.extraction_thread = self.extraction_thread
-        log_dialog.stats['sheets_total'] = selected_count
-        log_dialog.update_stats({})
-        
-        # اتصال سیگنال‌ها به پنجره لاگ
-        self.extraction_thread.progress.connect(log_dialog.update_progress)
-        self.extraction_thread.log.connect(log_dialog.append_log)
-        self.extraction_thread.sub_progress.connect(log_dialog.update_sub_progress)
-        self.extraction_thread.stats_update.connect(log_dialog.update_stats)
-        
-        # اتصال سیگنال‌ها به ویجت اصلی (برای بروزرسانی UI)
+        # اتصال سیگنال‌ها
         self.extraction_thread.progress.connect(self.on_progress)
         self.extraction_thread.log.connect(self.on_log)
         self.extraction_thread.sub_progress.connect(self.on_sub_progress)
+        self.extraction_thread.stats_update.connect(self.on_stats_update)
+        self.extraction_thread.finished.connect(self.on_finished)
         
-        # اتصال finished
-        def on_extraction_complete(success, message, summary):
-            log_dialog.on_extraction_finished()
-            # بروزرسانی آمار نهایی
-            log_dialog.update_stats({
-                'sheets_processed': summary.get('total_configs', 0),
-                'new_records': summary.get('new_records', 0),
-                'updated_records': summary.get('updated_records', 0),
-                'duplicates': len(summary.get('duplicates', [])),
-                'errors': summary.get('errors', 0)
-            })
-            self.on_finished(success, message, summary)
-        
-        self.extraction_thread.finished.connect(on_extraction_complete)
-        
-        # نمایش پنجره لاگ
-        log_dialog.show()
-        
-        # شروع thread بعد از نمایش پنجره
+        # شروع
         self.extraction_thread.start()
-        
-        # اجرای event loop برای پنجره modal
-        log_dialog.exec()
+    
+    def on_stats_update(self, stats):
+        """بروزرسانی آمار"""
+        # می‌توانیم در آینده آمار را در UI نمایش دهیم
+        pass
     
     def on_progress(self, value, message, color):
         """بروزرسانی پیشرفت اصلی"""

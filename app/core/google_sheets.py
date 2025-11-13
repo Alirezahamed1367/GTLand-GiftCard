@@ -345,8 +345,8 @@ class GoogleSheetExtractor:
             
             self.logger.info(f"🎯 شروع علامت‌گذاری در ستون index {extracted_col_idx}")
             
-            # تقسیم به بچ‌های کوچک برای جلوگیری از timeout
-            BATCH_SIZE = 500  # تعداد رکورد در هر بچ
+            # تقسیم به بچ‌های بزرگ‌تر برای سرعت بیشتر
+            BATCH_SIZE = 1000  # افزایش از 500 به 1000 برای سرعت بیشتر
             total_batches = (total_rows + BATCH_SIZE - 1) // BATCH_SIZE
             
             success_count = 0
@@ -382,9 +382,9 @@ class GoogleSheetExtractor:
                     failed_batches.append(batch_num + 1)
                     self.logger.error(f"❌ خطا در بچ {batch_num + 1}: {str(e)}")
                 
-                # تاخیر کوتاه بین بچ‌ها برای جلوگیری از rate limit
+                # تاخیر کمتر بین بچ‌ها برای سرعت بیشتر
                 if batch_num < total_batches - 1:
-                    time.sleep(1)
+                    time.sleep(0.5)  # کاهش از 1 ثانیه به 0.5 ثانیه
             
             # گزارش نهایی
             stats = {
