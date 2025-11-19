@@ -1,10 +1,9 @@
 """
-Migration Script - ایجاد جداول جدید
+Migration Script - ایجاد جداول کامل
 ===================================
 ایجاد جداول:
-- field_roles, role_presets
-- raw_data, import_batches
-- products, purchases, sales, bonuses, customers
+- سیستم قدیمی: sheet_configs, sales_data, process_logs, export_logs, export_templates
+- سیستم جدید: field_roles, role_presets, raw_data, import_batches, v2_products, etc.
 """
 import sys
 from pathlib import Path
@@ -13,6 +12,7 @@ from pathlib import Path
 root_path = Path(__file__).parent
 sys.path.insert(0, str(root_path))
 
+from app.models.base import Base, engine
 from app.models.financial import (
     FinancialBase, financial_engine,
     FieldRole, RolePreset,
@@ -23,20 +23,25 @@ from app.models.financial import (
 
 def run_migration():
     """
-    اجرای Migration
+    اجرای Migration کامل
     """
     print("=" * 60)
-    print("🚀 شروع Migration - سیستم 4 مرحله‌ای جدید")
+    print("🚀 شروع Migration - سیستم کامل")
     print("=" * 60)
     
     try:
-        # 1. ایجاد جداول
-        print("\n📊 مرحله 1: ایجاد جداول...")
-        FinancialBase.metadata.create_all(financial_engine)
-        print("✅ جداول ایجاد شدند")
+        # 1. ایجاد جداول سیستم قدیمی (برای سازگاری)
+        print("\n📊 مرحله 1: ایجاد جداول سیستم اصلی...")
+        Base.metadata.create_all(engine)
+        print("✅ جداول اصلی ایجاد شدند (sheet_configs, sales_data, logs, etc.)")
         
-        # 2. بارگذاری نقش‌های پیش‌فرض
-        print("\n🎭 مرحله 2: بارگذاری نقش‌های پیش‌فرض...")
+        # 2. ایجاد جداول سیستم جدید
+        print("\n📊 مرحله 2: ایجاد جداول سیستم 4 مرحله‌ای...")
+        FinancialBase.metadata.create_all(financial_engine)
+        print("✅ جداول سیستم جدید ایجاد شدند (field_roles, raw_data, v2_products, etc.)")
+        
+        # 3. بارگذاری نقش‌های پیش‌فرض
+        print("\n🎭 مرحله 3: بارگذاری نقش‌های پیش‌فرض...")
         db = get_financial_session()
         
         try:
@@ -53,27 +58,33 @@ def run_migration():
         finally:
             db.close()
         
-        # 3. تأیید
+        # 4. تأیید
         print("\n" + "=" * 60)
         print("✅ Migration با موفقیت کامل شد!")
         print("=" * 60)
         
-        print("\n📋 جداول ایجاد شده:")
+        print("\n📋 جداول سیستم اصلی:")
+        print("  • sheet_configs - تنظیمات شیت‌ها")
+        print("  • sales_data - داده‌های فروش")
+        print("  • export_templates - قالب‌های خروجی")
+        print("  • process_logs - لاگ عملیات")
+        print("  • export_logs - لاگ خروجی‌ها")
+        
+        print("\n📋 جداول سیستم 4 مرحله‌ای:")
         print("  • field_roles - نقش‌های فیلدها")
         print("  • role_presets - پیش‌فرض‌های نقش")
         print("  • raw_data - داده‌های خام (Stage 1)")
         print("  • import_batches - دسته‌های import")
-        print("  • products - محصولات/اکانت‌ها")
-        print("  • purchases - خریدها")
-        print("  • customers - مشتریان")
-        print("  • sales - فروش‌ها")
-        print("  • bonuses - بونوس/سیلور")
+        print("  • v2_products - محصولات/اکانت‌ها")
+        print("  • v2_purchases - خریدها")
+        print("  • v2_customers - مشتریان")
+        print("  • v2_sales - فروش‌ها")
+        print("  • v2_bonuses - بونوس/سیلور")
         
         print("\n🎯 مراحل بعدی:")
-        print("  1. باز کردن برنامه GT-Land")
-        print("  2. رفتن به منوی مدیریت نقش‌ها")
-        print("  3. بررسی نقش‌های پیش‌فرض")
-        print("  4. Import اولین شیت")
+        print("  1. اجرای برنامه: python app/main.py")
+        print("  2. تعریف شیت در قسمت 'شیت‌ها'")
+        print("  3. Import از طریق BI Platform → Smart Import")
         
         return True
         
