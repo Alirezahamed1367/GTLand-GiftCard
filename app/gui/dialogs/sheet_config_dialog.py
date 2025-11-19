@@ -4,7 +4,7 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QTextEdit, QPushButton, QCheckBox,
-    QLabel, QMessageBox, QGroupBox, QSpinBox
+    QLabel, QMessageBox, QGroupBox, QSpinBox, QComboBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QScreen
@@ -69,6 +69,30 @@ class SheetConfigDialog(QDialog):
         self.worksheet_input.setPlaceholderText("مثال: Sheet1")
         self.worksheet_input.setText("Sheet1")
         main_layout.addRow("نام برگه:", self.worksheet_input)
+        
+        # ⭐ نوع شیت - بسیار مهم!
+        self.type_combo = QComboBox()
+        self.type_combo.addItem("🛒 خرید (Purchase)", "Purchase")
+        self.type_combo.addItem("💰 فروش (Sale)", "Sale")
+        self.type_combo.addItem("🎁 بونوس (Bonus)", "Bonus")
+        self.type_combo.setStyleSheet("""
+            QComboBox {
+                padding: 6px;
+                border: 2px solid #2196F3;
+                border-radius: 5px;
+                background: white;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QComboBox:hover {
+                border-color: #1976D2;
+                background: #E3F2FD;
+            }
+        """)
+        type_help = QLabel("🔔 این انتخاب بسیار مهم است و نمی‌توان بعداً تغییرش داد!")
+        type_help.setStyleSheet("color: #D32F2F; font-weight: bold; font-size: 9pt;")
+        main_layout.addRow("نوع شیت:", self.type_combo)
+        main_layout.addRow("", type_help)
         
         main_group.setLayout(main_layout)
         layout.addWidget(main_group)
@@ -190,6 +214,13 @@ class SheetConfigDialog(QDialog):
         self.ready_col_input.setText(self.sheet_config.ready_column or "H")
         self.extracted_col_input.setText(self.sheet_config.extracted_column or "I")
         
+        # نوع شیت
+        sheet_type = self.sheet_config.sheet_type or "Purchase"
+        for i in range(self.type_combo.count()):
+            if self.type_combo.itemData(i) == sheet_type:
+                self.type_combo.setCurrentIndex(i)
+                break
+        
         # ستون‌های یکتا
         if self.sheet_config.unique_key_columns:
             unique_cols = ",".join(self.sheet_config.unique_key_columns)
@@ -246,10 +277,14 @@ class SheetConfigDialog(QDialog):
             # نقشه ستون‌ها حذف شد (ساده‌سازی)
             column_mappings = None
             
+            # ⭐ نوع شیت (بسیار مهم!)
+            sheet_type = self.type_combo.currentData()
+            
             data = {
                 'name': self.name_input.text().strip(),
                 'sheet_url': self.url_input.text().strip(),
                 'worksheet_name': self.worksheet_input.text().strip(),
+                'sheet_type': sheet_type,
                 'ready_column': self.ready_col_input.text().strip(),
                 'extracted_column': self.extracted_col_input.text().strip(),
                 'unique_key_columns': unique_cols,

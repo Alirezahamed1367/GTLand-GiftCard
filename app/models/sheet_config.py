@@ -22,6 +22,14 @@ class SheetConfig(Base):
     # وضعیت
     is_active = Column(Boolean, default=True, comment='فعال/غیرفعال')
     
+    # نوع شیت (خرید/فروش/بونوس) - بسیار مهم!
+    sheet_type = Column(
+        String(50), 
+        nullable=False, 
+        default='Purchase',
+        comment='نوع شیت: Purchase (خرید) | Sale (فروش) | Bonus (بونوس)'
+    )
+    
     # تنظیمات ستون‌ها
     column_mappings = Column(
         JSON, 
@@ -70,6 +78,7 @@ class SheetConfig(Base):
     __table_args__ = (
         Index('idx_sheet_config_active', 'is_active'),
         Index('idx_sheet_config_name', 'name'),
+        Index('idx_sheet_config_type', 'sheet_type'),
     )
     
     def __repr__(self):
@@ -83,6 +92,7 @@ class SheetConfig(Base):
             'sheet_url': self.sheet_url,
             'worksheet_name': self.worksheet_name,
             'is_active': self.is_active,
+            'sheet_type': self.sheet_type,
             'column_mappings': self.column_mappings,
             'ready_column': self.ready_column,
             'extracted_column': self.extracted_column,

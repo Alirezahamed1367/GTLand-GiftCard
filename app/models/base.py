@@ -15,6 +15,12 @@ Base = declarative_base()
 # تنظیمات دیتابیس
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///data/gt_land.db')
 
+# ایجاد پوشه data در صورت عدم وجود
+if DATABASE_URL.startswith('sqlite:///'):
+    from pathlib import Path
+    db_file_path = DATABASE_URL.replace('sqlite:///', '')
+    Path(db_file_path).parent.mkdir(parents=True, exist_ok=True)
+
 # ایجاد Engine
 if DATABASE_URL.startswith('sqlite'):
     # تنظیمات SQLite
