@@ -56,18 +56,18 @@ class ImportThread(QThread):
                 return
             
             # دریافت داده
-            success, data_or_error = gs_extractor.extract_data(
+            sheet_data = gs_extractor.extract_ready_rows(
                 sheet_url=sheet_url,
                 worksheet_name=worksheet_name,
                 ready_column=None,  # فعلاً بدون فیلتر
-                extracted_column=None
+                extracted_column=None,
+                columns_to_extract=None,
+                skip_rows=0
             )
             
-            if not success:
-                self.error.emit(f"خطا در دریافت داده: {data_or_error}")
+            if not sheet_data:
+                self.error.emit("خطا در دریافت داده از شیت")
                 return
-            
-            sheet_data = data_or_error
             
             if not sheet_data or len(sheet_data) < 2:
                 self.error.emit("شیت خالی است یا فقط هدر دارد")

@@ -147,65 +147,79 @@ class GoogleSheetExtractor:
             
             # ==================== پیدا کردن ستون آماده (Ready) ====================
             ready_col_idx = -1
-            ready_column_clean = ready_column.strip().lower()
             
-            # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
-            for idx, header in enumerate(headers):
-                header_clean = str(header).strip().lower()
-                if header_clean == ready_column_clean:
-                    ready_col_idx = idx
-                    msg = f"✅ ستون آماده پیدا شد با نام: '{header}' (index {idx})"
-                    self.logger.info(msg)
-                    if log_callback:
-                        log_callback(msg, "success")
-                    break
+            # اگر ready_column و extracted_column هر دو None هستند، همه ردیف‌ها برگردانده شوند
+            if ready_column is None and extracted_column is None:
+                msg = "📊 بدون فیلتر - همه ردیف‌ها برگردانده می‌شوند"
+                self.logger.info(msg)
+                if log_callback:
+                    log_callback(msg, "info")
+                return all_values  # شامل headers
             
-            # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
-            if ready_col_idx == -1 and len(ready_column) <= 3 and ready_column.isalpha():
-                try:
-                    ready_col_idx = column_letter_to_index(ready_column)
-                    if ready_col_idx < len(headers):
-                        self.logger.info(f"✅ ستون آماده پیدا شد با حرف: {ready_column} -> '{headers[ready_col_idx]}' (index {ready_col_idx})")
-                    else:
-                        ready_col_idx = -1
-                except:
-                    pass
-            
-            if ready_col_idx == -1:
-                self.logger.error(f"❌ ستون آماده '{ready_column}' یافت نشد!")
-                self.logger.error(f"📋 هدرهای موجود: {headers}")
-                return []
+            if ready_column:
+                ready_column_clean = ready_column.strip().lower()
+                
+                # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
+                for idx, header in enumerate(headers):
+                    header_clean = str(header).strip().lower()
+                    if header_clean == ready_column_clean:
+                        ready_col_idx = idx
+                        msg = f"✅ ستون آماده پیدا شد با نام: '{header}' (index {idx})"
+                        self.logger.info(msg)
+                        if log_callback:
+                            log_callback(msg, "success")
+                        break
+                
+                # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
+                if ready_col_idx == -1 and len(ready_column) <= 3 and ready_column.isalpha():
+                    try:
+                        ready_col_idx = column_letter_to_index(ready_column)
+                        if ready_col_idx < len(headers):
+                            self.logger.info(f"✅ ستون آماده پیدا شد با حرف: {ready_column} -> '{headers[ready_col_idx]}' (index {ready_col_idx})")
+                        else:
+                            ready_col_idx = -1
+                    except:
+                        pass
+                
+                if ready_col_idx == -1:
+                    self.logger.error(f"❌ ستون آماده '{ready_column}' یافت نشد!")
+                    self.logger.error(f"📋 هدرهای موجود: {headers}")
+                    return []
             
             # ==================== پیدا کردن ستون استخراج شده (Extracted) ====================
             extracted_col_idx = -1
-            extracted_column_clean = extracted_column.strip().lower()
             
-            # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
-            for idx, header in enumerate(headers):
-                header_clean = str(header).strip().lower()
-                if header_clean == extracted_column_clean:
-                    extracted_col_idx = idx
-                    msg = f"✅ ستون استخراج پیدا شد با نام: '{header}' (index {idx})"
-                    self.logger.info(msg)
-                    if log_callback:
-                        log_callback(msg, "success")
-                    break
+            if extracted_column:
+                extracted_column_clean = extracted_column.strip().lower()
+                
+                # روش 1: جستجو در نام‌های ستون‌ها (اولویت اول)
+                for idx, header in enumerate(headers):
+                    header_clean = str(header).strip().lower()
+                    if header_clean == extracted_column_clean:
+                        extracted_col_idx = idx
+                        msg = f"✅ ستون استخراج پیدا شد با نام: '{header}' (index {idx})"
+                        self.logger.info(msg)
+                        if log_callback:
+                            log_callback(msg, "success")
+                        break
+                
+                # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
+                if extracted_col_idx == -1 and len(extracted_column) <= 3 and extracted_column.isalpha():
+                    try:
+                        extracted_col_idx = column_letter_to_index(extracted_column)
+                        if extracted_col_idx < len(headers):
+                            self.logger.info(f"✅ ستون استخراج پیدا شد با حرف: {extracted_column} -> '{headers[extracted_col_idx]}' (index {extracted_col_idx})")
+                        else:
+                            extracted_col_idx = -1
+                    except:
+                        pass
+                
+                if extracted_col_idx == -1:
+                    self.logger.error(f"❌ ستون استخراج '{extracted_column}' یافت نشد!")
+                    self.logger.error(f"📋 هدرهای موجود: {headers}")
+                    return []
             
-            # روش 2: اگر پیدا نشد، شاید حرف ستون باشد (A, B, C, ...)
-            if extracted_col_idx == -1 and len(extracted_column) <= 3 and extracted_column.isalpha():
-                try:
-                    extracted_col_idx = column_letter_to_index(extracted_column)
-                    if extracted_col_idx < len(headers):
-                        self.logger.info(f"✅ ستون استخراج پیدا شد با حرف: {extracted_column} -> '{headers[extracted_col_idx]}' (index {extracted_col_idx})")
-                    else:
-                        extracted_col_idx = -1
-                except:
-                    pass
-            
-            if extracted_col_idx == -1:
-                self.logger.error(f"❌ ستون استخراج '{extracted_column}' یافت نشد!")
-                self.logger.error(f"📋 هدرهای موجود: {headers}")
-                return []
+            # ==================== فیلتر ستون‌ها ====================
             if columns_to_extract:
                 col_indices, col_names = [], []
                 for col in columns_to_extract:
