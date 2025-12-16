@@ -643,12 +643,30 @@ class DatabaseManager:
                 is_updated=True
             ).count()
             
+            # منتقل شده به Stage 2
+            transferred_count = db.query(SalesData).filter(
+                and_(
+                    SalesData.sheet_config_id == sheet_config_id,
+                    SalesData.transferred == 1
+                )
+            ).count()
+            
             # آخرین استخراج
             last_data = db.query(SalesData).filter_by(
                 sheet_config_id=sheet_config_id
             ).order_by(SalesData.extracted_at.desc()).first()
             
             last_extract = last_data.extracted_at if last_data else None
+            
+            # تعداد منتقل شده به Stage 2
+            try:
+                transferred_count = db.query(SalesData).filter_by(
+                    sheet_config_id=sheet_config_id,
+                    transferred=1
+                ).count()
+            except:
+                # اگر فیلد transferred وجود نداره
+                transferred_count = 0
             
             db.close()
             
@@ -659,6 +677,7 @@ class DatabaseManager:
                 'exported': exported,
                 'not_exported': not_exported,
                 'need_reexport': need_reexport,
+                'transferred_count': transferred_count,
                 'last_extract': last_extract
             }
             
@@ -671,6 +690,7 @@ class DatabaseManager:
                 'exported': 0,
                 'not_exported': 0,
                 'need_reexport': 0,
+                'transferred_count': 0,
                 'last_extract': None
             }
     
@@ -949,6 +969,78 @@ class DatabaseManager:
         except Exception as e:
             self.logger.error(f"Error deleting template: {e}")
             return False, str(e)
+    
+    # ==================== Transfer to Stage 2 ====================
+    
+    def get_extracted_data(self, sheet_config_id: int, include_exported: bool = False) -> List[Dict]:
+        """
+        دریافت داده‌های استخراج شده از یک شیت
+        
+        Args:
+            sheet_config_id: شناسه تنظیمات شیت
+            include_exported: شامل داده‌های Export شده
+            
+        Returns:
+            لیست داده‌ها
+        """
+        try:
+            db = self.get_session()
+            
+            query = db.query(SalesData).filter_by(sheet_config_id=sheet_config_id)
+            
+            if not include_exported:
+                query = query.filter_by(exported=0)
+            
+            data_rows = query.all()
+            
+            result = []
+            for row in data_rows:
+                result.append({
+                    'id': row.id,
+                    'row_number': row.row_number,
+                    'data': row.data,
+                    'exported': row.exported,
+                    'transferred': row.transferred if hasattr(row, 'transferred') else 0,
+                    'created_at': row.created_at
+                })
+            
+            db.close()
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"خطا در دریافت داده‌های استخراج شده: {str(e)}")
+            return []
+    
+    def mark_as_transferred(self, data_id: int) -> bool:
+        """
+        علامت‌گذاری یک رکورد به عنوان منتقل شده
+        
+        Args:
+            data_id: شناسه رکورد
+            
+        Returns:
+            موفقیت
+        """
+        try:
+            db = self.get_session()
+            
+            data = db.query(SalesData).filter_by(id=data_id).first()
+            if data:
+                # اگر فیلد transferred وجود نداره، اضافه می‌کنیم
+                if not hasattr(data, 'transferred'):
+                    # فیلد جدید - باید به مدل اضافه بشه
+                    pass
+                
+                data.transferred = 1
+                data.transferred_at = datetime.now()
+                db.commit()
+            
+            db.close()
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"خطا در علامت‌گذاری: {str(e)}")
+            return False
 
 
 # نمونه سراسری

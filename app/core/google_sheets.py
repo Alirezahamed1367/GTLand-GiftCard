@@ -700,3 +700,25 @@ class GoogleSheetExtractor:
         except Exception as e:
             self.logger.error(f"خطا در extract_and_save: {str(e)}")
             return False, str(e), {}
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    def get_all_data(self, sheet_url, worksheet_name):
+        """
+        دریافت تمام داده‌های یک worksheet (شامل هدر)
+        
+        Returns:
+            List[List]: لیستی از سطرها (هر سطر یک لیست است)
+        """
+        try:
+            sheet = self.client.open_by_url(sheet_url)
+            worksheet = sheet.worksheet(worksheet_name)
+            
+            # دریافت تمام داده‌ها
+            all_values = worksheet.get_all_values()
+            
+            self.logger.info(f"✅ {len(all_values)} سطر از '{worksheet_name}' دریافت شد")
+            return all_values
+            
+        except Exception as e:
+            self.logger.error(f"❌ خطا در دریافت داده: {str(e)}")
+            return []

@@ -20,7 +20,6 @@ from app.gui.widgets.sheet_list_widget import SheetListWidget
 from app.gui.widgets.extraction_widget import ExtractionWidget
 from app.gui.widgets.reports_widget import ReportsWidget
 from app.gui.widgets.data_viewer_widget import DataViewerWidget
-from app.gui.financial import FinancialWindow
 from app.gui.financial.role_manager_dialog import RoleManagerDialog
 from app.gui.financial.smart_import_wizard import SmartImportWizard
 from app.gui.financial.conflict_resolution_dialog import ConflictResolutionDialog
@@ -114,10 +113,9 @@ class MainWindow(QMainWindow):
         # تب تنظیمات
         self.create_settings_tab()
         
-        # تب سیستم مالی (جدید!)
-        self.create_financial_tab()
+        # تب گزارش‌ساز هوشمند
+        self.create_report_builder_tab()
         
-        main_layout.addWidget(self.tabs)
         main_layout.addWidget(self.tabs)
         
         # نوار وضعیت
@@ -151,20 +149,15 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_data)
         tools_menu.addAction(refresh_action)
         
-        # افزودن تنظیمات مالی
-        financial_settings_action = QAction("⚙️ تنظیمات مالی", self)
-        financial_settings_action.triggered.connect(self.open_financial_settings)
-        tools_menu.addAction(financial_settings_action)
+        # افزودن مدیریت نقش‌ها
+        role_manager_action = QAction("🎭 مدیریت نقش‌ها", self)
+        role_manager_action.triggered.connect(self.open_role_manager)
+        tools_menu.addAction(role_manager_action)
         
         # افزودن ویزارد import داده
         import_wizard_action = QAction("🔄 ورود داده از شیت‌ها", self)
-        import_wizard_action.triggered.connect(self.open_import_wizard)
+        import_wizard_action.triggered.connect(self.open_smart_import_wizard)
         tools_menu.addAction(import_wizard_action)
-        
-        # افزودن مدیریت موجودی
-        inventory_action = QAction("📦 مدیریت موجودی", self)
-        inventory_action.triggered.connect(self.open_inventory_manager)
-        tools_menu.addAction(inventory_action)
         
         # منوی راهنما
         help_menu = menubar.addMenu("❓ راهنما")
@@ -308,37 +301,19 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.extraction_widget, "📥 استخراج داده")
     
     def create_export_tab(self):
-        """ایجاد تب تولید خروجی و مدیریت داده‌ها"""
+        """ایجاد تب مدیریت داده‌ها و انتقال به مرحله بعد"""
         export = QWidget()
         layout = QVBoxLayout(export)
         
-        title = QLabel("📤 Export و مدیریت داده‌ها")
+        title = QLabel("📊 مدیریت داده‌ها و انتقال")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         layout.addWidget(title)
         
-        # دکمه‌های اصلی
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(SPACING_MEDIUM)
-        
-        export_btn = QPushButton("📤 Export جدید")
-        export_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
-        export_btn.setStyleSheet(get_button_style(COLOR_SUCCESS, FONT_SIZE_BUTTON, BUTTON_HEIGHT_LARGE))
-        export_btn.clicked.connect(self.open_export_dialog)
-        buttons_layout.addWidget(export_btn)
-        
-        templates_btn = QPushButton("🗂️ مدیریت Template ها")
-        templates_btn.setMinimumHeight(BUTTON_HEIGHT_LARGE)
-        templates_btn.setStyleSheet(get_button_style(COLOR_PRIMARY, FONT_SIZE_BUTTON, BUTTON_HEIGHT_LARGE))
-        templates_btn.clicked.connect(self.open_template_manager)
-        buttons_layout.addWidget(templates_btn)
-        
-        layout.addLayout(buttons_layout)
-        
-        # ویجت نمایش داده‌ها
+        # ویجت نمایش داده‌ها (شامل دکمه انتقال به Stage 2)
         self.data_viewer_widget = DataViewerWidget()
         layout.addWidget(self.data_viewer_widget)
         
-        self.tabs.addTab(export, "📤 Export و داده‌ها")
+        self.tabs.addTab(export, "📊 مدیریت داده‌ها")
     
     def create_reports_tab(self):
         """ایجاد تب گزارش‌ها"""
@@ -377,186 +352,52 @@ class MainWindow(QMainWindow):
         
         self.tabs.addTab(settings, "⚙️ تنظیمات")
     
-    def create_financial_tab(self):
-        """ایجاد تب سیستم هوش تجاری (BI Platform)"""
-        financial = QWidget()
-        layout = QVBoxLayout(financial)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+    def create_report_builder_tab(self):
+        """ایجاد تب گزارش‌ساز هوشمند"""
+        from app.gui.financial.report_builder_widget import ReportBuilderWidget
         
-        # عنوان اصلی
-        title = QLabel("🚀 پلتفرم هوش تجاری GT-Land")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("color: #1976D2; padding: 10px;")
-        layout.addWidget(title)
+        self.report_builder_widget = ReportBuilderWidget()
+        self.report_builder_widget.export_requested.connect(self.handle_report_export)
         
-        # توضیحات کوتاه
-        desc = QLabel(
-            "سیستم یکپارچه تحلیل و گزارش‌گیری از داده‌های فروش\n"
-            "با قابلیت‌های پیشرفته BI و Dashboard"
-        )
-        desc.setFont(QFont("Segoe UI", 11))
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setStyleSheet("color: #555; padding: 5px;")
-        layout.addWidget(desc)
-        
-        # دکمه باز کردن BI Platform
-        open_bi_btn = QPushButton("🎯 باز کردن پلتفرم BI")
-        open_bi_btn.setMinimumHeight(70)
-        open_bi_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1976D2, stop:1 #42A5F5);
-                color: white;
-                border: none;
-                border-radius: 12px;
-                font-size: 18pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #1565C0, stop:1 #1976D2);
-            }
-            QPushButton:pressed {
-                background: #0D47A1;
-            }
-        """)
-        open_bi_btn.clicked.connect(self.open_bi_platform)
-        layout.addWidget(open_bi_btn)
-        
-        # دکمه مدیریت فیلدهای داینامیک - جدید
-        field_mgr_row = QHBoxLayout()
-        
-        field_manager_btn = QPushButton("⚙️ مدیریت فیلدهای سفارشی")
-        field_manager_btn.setMinimumHeight(50)
-        field_manager_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #673AB7, stop:1 #9C27B0);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #5E35B1, stop:1 #8E24AA);
-            }
-        """)
-        field_manager_btn.clicked.connect(self.open_field_manager)
-        field_mgr_row.addWidget(field_manager_btn)
-        
-        dynamic_import_btn = QPushButton("🔄 Import داده (داینامیک)")
-        dynamic_import_btn.setMinimumHeight(50)
-        dynamic_import_btn.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #FF6F00, stop:1 #FF9800);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 14pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #E65100, stop:1 #F57C00);
-            }
-        """)
-        dynamic_import_btn.clicked.connect(self.open_dynamic_import_wizard)
-        field_mgr_row.addWidget(dynamic_import_btn)
-        
-        layout.addLayout(field_mgr_row)
-        
-        # سپاراتور
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("background: #ddd; max-height: 1px;")
-        layout.addWidget(separator)
-        
-        # ویژگی‌ها در دو ستون
-        features_layout = QHBoxLayout()
-        
-        # ستون اول
-        col1 = QVBoxLayout()
-        col1_features = [
-            "📊 مدیریت منابع داده (Data Sources)",
-            "🏷️ فیلدهای قابل تنظیم و داینامیک",
-            "🧮 فرمول‌ساز گرافیکی (Formula Builder)",
-            "🔍 مرورگر پیشرفته داده با فیلترها"
-        ]
-        for feature in col1_features:
-            lbl = QLabel(f"  {feature}")
-            lbl.setFont(QFont("Segoe UI", 10))
-            lbl.setStyleSheet("padding: 5px; color: #333;")
-            col1.addWidget(lbl)
-        features_layout.addLayout(col1)
-        
-        # ستون دوم
-        col2 = QVBoxLayout()
-        col2_features = [
-            "📈 گزارش‌ساز حرفه‌ای و Dashboard",
-            "📉 نمودارها و Pivot Tables",
-            "🔄 Migration از Phase 1 (Google Sheets)",
-            "⚡ مقیاس‌پذیر برای حجم بالای داده"
-        ]
-        for feature in col2_features:
-            lbl = QLabel(f"  {feature}")
-            lbl.setFont(QFont("Segoe UI", 10))
-            lbl.setStyleSheet("padding: 5px; color: #333;")
-            col2.addWidget(lbl)
-        features_layout.addLayout(col2)
-        
-        layout.addLayout(features_layout)
-        
-        # دکمه دوم: سیستم مالی قدیمی
-        open_old_btn = QPushButton("💰 سیستم مالی کلاسیک (قدیمی)")
-        open_old_btn.setMinimumHeight(50)
-        open_old_btn.setStyleSheet("""
-            QPushButton {
-                background: #607D8B;
-                color: white;
-                border: none;
-                border-radius: 8px;
-                font-size: 12pt;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #546E7A;
-            }
-        """)
-        open_old_btn.clicked.connect(self.open_financial_window)
-        layout.addWidget(open_old_btn)
-        
-        layout.addStretch()
-        
-        self.tabs.addTab(financial, "🚀 هوش تجاری")
-        
-        # ذخیره رفرنس‌ها
-        self.bi_platform_window = None
-        self.financial_window = None
+        self.tabs.addTab(self.report_builder_widget, "📊 گزارش‌ساز هوشمند")
     
-    def open_bi_platform(self):
-        """باز کردن پلتفرم BI"""
-        if self.bi_platform_window is None or not self.bi_platform_window.isVisible():
-            from app.gui.financial.bi_platform_manager import BIPlatformManager
-            self.bi_platform_window = BIPlatformManager(self)
-        
-        self.bi_platform_window.show()
-        self.bi_platform_window.raise_()
-        self.bi_platform_window.activateWindow()
+    def handle_report_export(self, export_data):
+        """مدیریت Export گزارش"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from datetime import datetime
+            
+            # ایجاد فایل Excel
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "گزارش"
+            
+            # عنوان
+            ws['A1'] = export_data.get('report_type', 'گزارش')
+            ws['A1'].font = Font(size=14, bold=True)
+            ws['A1'].fill = PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")
+            
+            # تاریخ
+            ws['A2'] = f"تاریخ: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            
+            # داده‌ها (فعلاً ساده)
+            ws['A4'] = "این گزارش بعد از تکمیل Export به Excel صادر می‌شود"
+            
+            # ذخیره
+            filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            wb.save(filename)
+            
+            QMessageBox.information(
+                self,
+                "Export موفق",
+                f"✅ گزارش ذخیره شد:\n{filename}"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "خطا", f"خطا در Export:\n{e}")
     
-    def open_financial_window(self):
-        """باز کردن پنجره سیستم مالی"""
-        if self.financial_window is None or not self.financial_window.isVisible():
-            self.financial_window = FinancialWindow(self)
-        
-        self.financial_window.show()
-        self.financial_window.raise_()
-        self.financial_window.activateWindow()
-    
+
     def create_stat_card(self, title, value, color):
         """ایجاد کارت آمار"""
         frame = QFrame()
@@ -666,71 +507,23 @@ class MainWindow(QMainWindow):
         """
         QMessageBox.about(self, "درباره برنامه", about_text)
     
-    def open_financial_settings(self):
-        """باز کردن پنجره تنظیمات مالی"""
+    def open_smart_import_wizard(self):
+        """باز کردن ویزارد ورود هوشمند داده از Google Sheets"""
         try:
-            from app.gui.financial.configuration_manager import ConfigurationManager
+            from app.gui.financial.smart_import_wizard import SmartImportWizard
             
-            dialog = ConfigurationManager(self)
-            dialog.config_changed.connect(self.refresh_data)
-            dialog.exec()
-            
-        except Exception as e:
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن تنظیمات مالی:\n{str(e)}")
-    
-    def open_import_wizard(self):
-        """باز کردن ویزارد ورود داده"""
-        try:
-            from app.gui.financial.data_import_wizard import DataImportWizard
-            
-            dialog = DataImportWizard(self)
-            dialog.exec()
+            dialog = SmartImportWizard(self)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # بروزرسانی لیست شیت‌ها در تب Import
+                if hasattr(self, 'data_viewer_widget'):
+                    self.data_viewer_widget.load_sheets()
             
         except Exception as e:
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن ویزارد:\n{str(e)}")
     
-    def open_inventory_manager(self):
-        """باز کردن مدیر موجودی"""
-        try:
-            from app.gui.financial.inventory_manager import InventoryManager
-            
-            dialog = InventoryManager(self)
-            dialog.exec()
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر موجودی:\n{str(e)}")
-    
-    def open_field_manager(self):
-        """باز کردن مدیر فیلدهای سفارشی - جدید"""
-        try:
-            from app.gui.financial.field_manager_dialog import FieldManagerDialog
-            
-            dialog = FieldManagerDialog(self)
-            dialog.fields_changed.connect(lambda: self.statusBar().showMessage("✅ فیلدها بروزرسانی شد", 3000))
-            dialog.exec()
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر فیلدها:\n{str(e)}")
-    
-    def open_dynamic_import_wizard(self):
-        """باز کردن ویزارد Import داینامیک - جدید"""
-        try:
-            from app.gui.financial.dynamic_import_wizard import DynamicImportWizard
-            
-            dialog = DynamicImportWizard(self)
-            dialog.exec()
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن Import داینامیک:\n{str(e)}")
-    
+
     def open_role_manager(self):
         """باز کردن مدیر نقش‌ها - سیستم جدید"""
         try:

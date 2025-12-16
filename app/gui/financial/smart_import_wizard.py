@@ -17,7 +17,7 @@ from datetime import datetime
 import uuid
 
 from app.models.financial import (
-    FieldRole, CustomField, FieldMapping, RawData, ImportBatch,
+    FieldRole, FieldMapping, RawData,
     get_financial_session
 )
 from app.models.sheet_config import SheetConfig
@@ -149,6 +149,15 @@ class ImportThread(QThread):
                             stats["unchanged"] += 1
                     else:
                         # ردیف جدید
+                        # همیشه is_extracted=True برای پردازش خودکار
+                        # (اگر ستون Extracted در شیت وجود داشت، از اون استفاده می‌کنیم)
+                        extracted_value = data_dict.get('Extracted', 'FALSE')
+                        is_extracted_bool = str(extracted_value).strip().upper() == 'TRUE'
+                        
+                        # اگر auto_process فعال باشه، همیشه True
+                        if self.config.get('auto_process', False):
+                            is_extracted_bool = True
+                        
                         raw = RawData(
                             sheet_name=self.config['sheet_name'],
                             sheet_id=self.config['sheet_id'],
@@ -156,22 +165,25 @@ class ImportThread(QThread):
                             unique_key_fields=unique_key_fields,
                             data=data_dict,
                             row_number=i + 2,  # +2 چون ردیف 1 هدر است
-                            is_extracted=data_dict.get('Extracted', False),
+                            is_extracted=is_extracted_bool,
                             import_batch_id=batch_id,
                             import_source='google_sheets'
                         )
                         db.add(raw)
                         stats["new"] += 1
                     
+                    # Commit بعد از هر ردیف موفق
+                    db.commit()
+                    
                     # بروزرسانی پیشرفت
                     progress_pct = 40 + int((i / len(rows)) * 40)
                     self.progress.emit(progress_pct, f"Import شد: {i+1}/{len(rows)}")
                     
                 except Exception as e:
+                    # Rollback در صورت خطا
+                    db.rollback()
                     stats["errors"] += 1
                     print(f"❌ خطا در ردیف {i+2}: {e}")
-            
-            db.commit()
             
             # 4. پردازش (Stage 1 → Stage 2)
             if self.config.get('auto_process', False):
@@ -365,6 +377,7 @@ class SheetSelectionPage(QWizardPage):
         
         return {
             'sheet_name': sheet_name,
+            'sheet_id': sheet_info.get('id'),  # ⭐ اضافه شد
             'sheet_url': sheet_info.get('url'),
             'worksheet_name': sheet_info.get('worksheet'),
             'sheet_config': sheet_info.get('config'),

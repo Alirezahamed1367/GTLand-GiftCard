@@ -1,9 +1,13 @@
 """
-مدل‌های دیتابیس سیستم مالی GT-Land - نسخه جدید
-Financial Database Models - Configuration-Driven System
+مدل‌های دیتابیس سیستم مالی GT-Land - نسخه ساده Label-Based
+Financial Database Models - Simple Label-Based System
 
-این پکیج شامل تمام مدل‌های مربوط به سیستم مالی است
+سیستم جدید بر اساس Label به عنوان کلید اصلی
 """
+
+# ═══════════════════════════════════════════════════════════════
+# BASE (دیتابیس و session)
+# ═══════════════════════════════════════════════════════════════
 
 from .base_financial import (
     FinancialBase,
@@ -14,74 +18,66 @@ from .base_financial import (
     init_financial_db
 )
 
-# Configuration Models (NEW)
-from .configurations import (
-    UnitType,
-    Department,
-    Platform,
-    Region,
-    TransactionType,
-    SKUPattern,
-    CustomerCodePattern,
-    SheetTypeDefinition,
-    SheetColumnMapping,
-    CurrencyRate,
-    CalculationFormula,
-    init_default_configurations
+# ═══════════════════════════════════════════════════════════════
+# SIMPLE MODELS (مدل‌های ساده - سیستم جدید)
+# ═══════════════════════════════════════════════════════════════
+
+from .simple_models import (
+    Account,           # آکانت‌ها (با label به عنوان کلید)
+    AccountGold,       # خریدهای گلد
+    AccountSilver,     # بونوس‌های سیلور (رایگان)
+    Sale,              # فروش‌ها (gold یا silver)
+    SaleType,          # نوع فروش (Enum)
+    AccountSummary,    # خلاصه محاسبات (Materialized View)
+    Customer           # مشتریان
 )
 
-# Core Financial Models (NEW)
-from .core_models import (
-    AccountInventory,
-    Purchase,
-    Customer,
-    Sale,
-    SilverBonus,
-    CustomerLedger,
-    CustomerPayment,
-    AccountProfitLoss
+# ═══════════════════════════════════════════════════════════════
+# DYNAMIC MODELS (مدل‌های سیستم پویا - Field Mapping)
+# ═══════════════════════════════════════════════════════════════
+
+from .dynamic_models import (
+    SheetImport,       # شیت‌های Import شده
+    RawData,           # داده‌های خام
+    FieldMapping,      # نقشه‌برداری فیلدها
+    Platform,          # پلتفرم‌های فروش
+    DiscrepancyReport, # گزارش مغایرت‌ها
+    CustomReport,      # گزارش‌های سفارشی
+    SheetType,         # نوع شیت (Enum)
+    DataType,          # نوع داده (Enum)
+    TargetField        # نقش فیلد (Enum)
 )
 
-# EAV Models (OLD - Still Active)
-from .dynamic_eav import (
-    DataSource,
-    FieldDefinition,
-    DataEntity,
-    FieldValue,
-    Formula,
-    ReportDefinition,
-    MaterializedView
-)
+# ═══════════════════════════════════════════════════════════════
+# FIELD ROLES & CUSTOM FIELDS (قابل پیکربندی توسط کاربر)
+# ═══════════════════════════════════════════════════════════════
 
-# Custom Fields (NEW - User-Defined Fields System)
-from .custom_fields import (
-    CustomField,
-    FieldMapping,
-    TransactionSchema
-)
-
-# Field Roles (NEW - User-Defined Roles System)
 from .field_roles import (
-    FieldRole,
-    RolePreset,
-    init_default_roles,
-    init_default_presets
+    FieldRole,              # نقش‌های فیلد
+    RolePreset,             # پیش‌فرض‌ها
+    init_default_roles,     # ایجاد نقش‌های پیش‌فرض
+    init_default_presets    # ایجاد preset‌های پیش‌فرض
 )
 
-# Raw Data (Stage 1)
-from .raw_data import (
-    RawData,
-    ImportBatch
-)
+# حذف import قدیمی custom_fields که با dynamic_models جایگزین شد
+# from .custom_fields import (
+#     CustomField,     # فیلدهای سفارشی
+#     FieldMapping     # نگاشت فیلدها
+# )
 
-# Processed Data (Stage 2)
-from .processed_data import (
-    ProductV2,
-    PurchaseV2,
-    CustomerV2,
-    SaleV2,
-    BonusV2
-)
+# ═══════════════════════════════════════════════════════════════
+# RAW DATA (داده‌های خام از Google Sheets) - قدیمی
+# ═══════════════════════════════════════════════════════════════
+
+# از raw_data.py قدیمی استفاده نمی‌کنیم - جایگزین شده با dynamic_models
+# from .raw_data import (
+#     RawData as OldRawData,  # داده‌های خام قدیمی
+#     ImportBatch     # دسته‌های import
+# )
+
+# ═══════════════════════════════════════════════════════════════
+# EXPORTS
+# ═══════════════════════════════════════════════════════════════
 
 __all__ = [
     # Base
@@ -92,58 +88,29 @@ __all__ = [
     'get_financial_session',
     'init_financial_db',
     
-    # Configuration Models
-    'UnitType',
-    'Department',
-    'Platform',
-    'Region',
-    'TransactionType',
-    'SKUPattern',
-    'CustomerCodePattern',
-    'SheetTypeDefinition',
-    'SheetColumnMapping',
-    'CurrencyRate',
-    'CalculationFormula',
-    'init_default_configurations',
-    
-    # Core Financial Models
-    'AccountInventory',
-    'Purchase',
-    'Customer',
+    # Simple Models
+    'Account',
+    'AccountGold',
+    'AccountSilver',
     'Sale',
-    'SilverBonus',
-    'CustomerLedger',
-    'CustomerPayment',
-    'AccountProfitLoss',
+    'SaleType',
+    'AccountSummary',
+    'Customer',
     
-    # EAV Models (Dynamic BI Platform)
-    'DataSource',
-    'FieldDefinition',
-    'DataEntity',
-    'FieldValue',
-    'Formula',
-    'ReportDefinition',
-    'MaterializedView',
-    
-    # Custom Fields (User-Defined)
-    'CustomField',
+    # Dynamic Models
+    'SheetImport',
+    'RawData',
     'FieldMapping',
-    'TransactionSchema',
+    'Platform',
+    'DiscrepancyReport',
+    'CustomReport',
+    'SheetType',
+    'DataType',
+    'TargetField',
     
-    # Field Roles (User-Defined)
+    # Field Roles (old system - kept for compatibility)
     'FieldRole',
     'RolePreset',
     'init_default_roles',
     'init_default_presets',
-    
-    # Raw Data (Stage 1)
-    'RawData',
-    'ImportBatch',
-    
-    # Processed Data (Stage 2)
-    'ProductV2',
-    'PurchaseV2',
-    'CustomerV2',
-    'SaleV2',
-    'BonusV2',
 ]

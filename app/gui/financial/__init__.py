@@ -1,16 +1,16 @@
 """
-ماژول‌های رابط کاربری مالی و BI Platform
+ماژول‌های رابط کاربری مالی - سیستم جدید
 """
 
-from .financial_window import FinancialWindow
-from .bi_platform_manager import BIPlatformManager
-from .formula_builder import FormulaBuilderDialog
-from .data_explorer import DataExplorerWidget, AdvancedFilterDialog
+# فقط ماژول‌های ضروری Import می‌شوند
+from .role_manager_dialog import RoleManagerDialog
+from .smart_import_wizard import SmartImportWizard
+from .conflict_resolution_dialog import ConflictResolutionDialog
+from .report_builder_widget import ReportBuilderWidget
 
 __all__ = [
-    'FinancialWindow',
-    'BIPlatformManager',
-    'FormulaBuilderDialog',
-    'DataExplorerWidget',
-    'AdvancedFilterDialog'
+    'RoleManagerDialog',
+    'SmartImportWizard',
+    'ConflictResolutionDialog',
+    'ReportBuilderWidget'
 ]

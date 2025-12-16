@@ -13,7 +13,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon
 
 from app.models.financial import (
-    FieldRole, RolePreset, CustomField,
+    FieldRole, RolePreset,
     get_financial_session, init_default_roles, init_default_presets
 )
 

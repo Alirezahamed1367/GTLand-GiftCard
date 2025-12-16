@@ -7,14 +7,11 @@ from decimal import Decimal
 
 from app.models.financial import (
     FinancialSessionLocal,
-    Department, 
-    AccountInventory as Account, 
-    Customer, 
-    Purchase as Supplier,  # موقتاً
-    Sale as Transaction,
-    SilverBonus as SilverTransaction,
-    CustomerPayment as Payment,
-    UnitType as ProductType
+    Account,
+    AccountGold,
+    AccountSilver,
+    Sale,
+    Customer
 )
 from app.core.logger import app_logger
 

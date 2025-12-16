@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from app.utils.ui_constants import COLORS
 from app.core.database import DatabaseManager
+from app.core.google_sheets import GoogleSheetExtractor
 from loguru import logger
 
 
@@ -119,6 +120,25 @@ class DataViewerWidget(QWidget):
         deselect_all_btn.clicked.connect(self.deselect_all_sheets)
         layout.addWidget(deselect_all_btn)
         
+        # دکمه انتقال به مرحله بعد (Stage 2)
+        transfer_btn = QPushButton("🚀 انتقال به مرحله بعدی")
+        transfer_btn.setToolTip("انتقال داده‌های انتخاب شده به سیستم مالی (Stage 2) با پردازش نقش‌ها")
+        transfer_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #7c3aed;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #6d28d9;
+            }}
+        """)
+        transfer_btn.clicked.connect(self.transfer_to_stage2)
+        layout.addWidget(transfer_btn)
+        
         # دکمه حذف داده‌ها (فقط داده‌ها - تنظیمات باقی می‌ماند)
         delete_data_btn = QPushButton("🗑️ حذف فقط داده‌ها")
         delete_data_btn.setToolTip("حذف داده‌های استخراج شده - تنظیمات شیت حفظ می‌شود")
@@ -194,15 +214,27 @@ class DataViewerWidget(QWidget):
         """ایجاد کارت ساده بدون آمار"""
         
         # تعیین رنگ بر اساس وضعیت
-        if stat['not_exported'] > 0:
+        # بررسی وضعیت transferred
+        all_data_count = stat.get('total', 0)
+        transferred_count = stat.get('transferred_count', 0)
+        
+        if transferred_count >= all_data_count and all_data_count > 0:
+            # همه منتقل شده
+            border_color = "#10b981"  # سبز
+            status_text = "✅ همه منتقل شده"
+        elif transferred_count > 0:
+            # بعضی منتقل شده
+            border_color = "#f59e0b"  # نارنجی
+            status_text = f"⚠️ {all_data_count - transferred_count} منتقل نشده"
+        elif stat['not_exported'] > 0:
             border_color = COLORS['danger']
-            status_text = "نشده دارد Export"
+            status_text = "❌ Export نشده دارد"
         elif stat['need_reexport'] > 0:
             border_color = COLORS['warning']
-            status_text = "نیاز به Re-export"
+            status_text = "⚠️ نیاز به Re-export"
         else:
             border_color = COLORS['success']
-            status_text = "همه Export شده"
+            status_text = "✅ Export شده"
         
         # کارت اصلی
         card = QFrame()
@@ -429,3 +461,155 @@ class DataViewerWidget(QWidget):
     def open_sheet_details(self, stat):
         """متد سازگار با نسخه قبلی"""
         self.show_sheet_details(stat['sheet_config_id'])
+    
+    def transfer_to_stage2(self):
+        """انتقال داده‌ها به مرحله بعدی (Stage 2) با پردازش نقش‌ها"""
+        if not self.selected_sheets:
+            QMessageBox.warning(self, "هشدار", "⚠️ لطفاً حداقل یک شیت انتخاب کنید")
+            return
+        
+        # بررسی نقش‌ها و نگاشت ستون‌های هر شیت
+        try:
+            from app.models.financial import get_financial_session, FieldRole
+            from app.core.google_sheets import GoogleSheetExtractor
+            
+            db = get_financial_session()
+            
+            # بررسی وجود نقش‌های پایه
+            roles_count = db.query(FieldRole).filter(FieldRole.is_active == True).count()
+            
+            if roles_count == 0:
+                QMessageBox.warning(
+                    self, "⚠️ نقش‌ها تعریف نشده",
+                    "❌ نقش‌های پایه تعریف نشده است!\n\n"
+                    "لطفاً ابتدا از منوی 'ابزارها' → 'تنظیمات مالی' → 'مدیریت نقش‌ها'\n"
+                    "نقش‌های پایه را تعریف کنید."
+                )
+                db.close()
+                return
+            
+            # 🔍 بررسی دقیق هر شیت انتخابی
+            sheets_without_mapping = []
+            sheets_missing_roles = []  # {sheet_name: [missing_roles]}
+            
+            extractor = GoogleSheetExtractor()
+            
+            for sheet_id in self.selected_sheets:
+                sheet_config = self.db_manager.get_sheet_config(sheet_id)
+                if not sheet_config:
+                    continue
+                
+                # دریافت ستون‌های شیت
+                try:
+                    headers = extractor.get_headers(sheet_config.sheet_url, sheet_config.worksheet_name)
+                except Exception as e:
+                    print(f"❌ خطا در دریافت ستون‌های شیت {sheet_config.name}: {e}")
+                    continue
+                
+                if not headers:
+                    continue
+                
+                # بررسی نگاشت هر ستون
+                mapped_columns = db.query(CustomField).filter(
+                    CustomField.name.in_(headers),
+                    CustomField.is_active == True
+                ).all()
+                
+                if not mapped_columns:
+                    sheets_without_mapping.append(sheet_config.name)
+                    continue
+                
+                # بررسی نقش‌های ضروری
+                mapped_roles = set()
+                for field in mapped_columns:
+                    if field.role_id:
+                        role = db.query(FieldRole).filter(FieldRole.id == field.role_id).first()
+                        if role:
+                            mapped_roles.add(role.name)
+                
+                required_roles = {'identifier', 'value', 'rate'}
+                missing = required_roles - mapped_roles
+                
+                if missing:
+                    sheets_missing_roles.append({
+                        'name': sheet_config.name,
+                        'missing': list(missing)
+                    })
+            
+            db.close()
+            
+            # گزارش مشکلات
+            if sheets_without_mapping or sheets_missing_roles:
+                error_msg = "❌ برخی شیت‌ها نگاشت ستون کامل ندارند:\n\n"
+                
+                if sheets_without_mapping:
+                    error_msg += "🔴 شیت‌های بدون نگاشت:\n"
+                    for sheet_name in sheets_without_mapping:
+                        error_msg += f"  • {sheet_name}\n"
+                    error_msg += "\n"
+                
+                if sheets_missing_roles:
+                    error_msg += "🟡 شیت‌هایی که نقش‌های ضروری ندارند:\n"
+                    for sheet_info in sheets_missing_roles:
+                        missing_fa = []
+                        for role in sheet_info['missing']:
+                            if role == 'identifier':
+                                missing_fa.append('کد محصول')
+                            elif role == 'value':
+                                missing_fa.append('مقدار')
+                            elif role == 'rate':
+                                missing_fa.append('نرخ')
+                        error_msg += f"  • {sheet_info['name']}: {', '.join(missing_fa)}\n"
+                    error_msg += "\n"
+                
+                error_msg += (
+                    "📌 برای رفع مشکل:\n"
+                    "  1️⃣ به تب 'مدیریت شیت‌ها' بروید\n"
+                    "  2️⃣ شیت مشکل‌دار را ویرایش کنید\n"
+                    "  3️⃣ دکمه 'تست ارتباط' را بزنید\n"
+                    "  4️⃣ نقش‌های ضروری را تنظیم کنید\n"
+                    "  5️⃣ ذخیره کنید\n\n"
+                    "آیا می‌خواهید الان به تب 'مدیریت شیت‌ها' بروید؟"
+                )
+                
+                reply = QMessageBox.question(
+                    self, "⚠️ نقش‌های ستون‌ها ناقص",
+                    error_msg,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.Yes:
+                    main_window = self.window()
+                    if hasattr(main_window, 'tabs'):
+                        main_window.tabs.setCurrentIndex(0)
+                
+                return
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "خطا", f"❌ خطا در بررسی نقش‌ها:\n{str(e)}")
+            return
+        
+        # نمایش دیالوگ تأیید و انتخاب گزینه‌ها
+        from app.gui.dialogs.transfer_dialog import TransferToStage2Dialog
+        
+        dialog = TransferToStage2Dialog(self.selected_sheets, self)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            # بعد از موفقیت، بروزرسانی
+            self.load_sheets()
+            QMessageBox.information(
+                self, "✅ موفقیت",
+                f"داده‌های {len(self.selected_sheets)} شیت با موفقیت به مرحله بعد منتقل شدند!\n\n"
+                "💡 حالا می‌توانید در تب 'گزارش‌ساز هوشمند' گزارش‌های خود را ایجاد کنید."
+            )
+    
+    def open_role_manager(self):
+        """باز کردن مدیر نقش‌ها"""
+        try:
+            from app.gui.financial.role_manager_dialog import RoleManagerDialog
+            dialog = RoleManagerDialog(self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر نقش‌ها:\n{str(e)}")
+

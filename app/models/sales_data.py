@@ -38,6 +38,10 @@ class SalesData(Base):
     is_updated = Column(Boolean, default=False, comment='آیا بروزرسانی شده؟')
     update_count = Column(Integer, default=0, comment='تعداد دفعات بروزرسانی')
     
+    # وضعیت انتقال به Stage 2
+    transferred = Column(Integer, default=0, comment='آیا به سیستم مالی منتقل شده؟ (0=خیر, 1=بله)')
+    transferred_at = Column(TIMESTAMP, nullable=True, comment='تاریخ انتقال به Stage 2')
+    
     # تاریخ‌ها
     extracted_at = Column(TIMESTAMP, server_default=func.now(), comment='تاریخ استخراج')
     updated_at = Column(
@@ -77,6 +81,8 @@ class SalesData(Base):
             'exported_at': self.exported_at.isoformat() if self.exported_at else None,
             'is_updated': self.is_updated,
             'update_count': self.update_count,
+            'transferred': self.transferred if hasattr(self, 'transferred') else 0,
+            'transferred_at': self.transferred_at.isoformat() if hasattr(self, 'transferred_at') and self.transferred_at else None,
             'extracted_at': self.extracted_at.isoformat() if self.extracted_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'notes': self.notes,
