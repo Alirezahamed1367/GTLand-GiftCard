@@ -3,14 +3,14 @@
 """
 
 # فقط ماژول‌های ضروری Import می‌شوند
-from .role_manager_dialog import RoleManagerDialog
 from .smart_import_wizard import SmartImportWizard
 from .conflict_resolution_dialog import ConflictResolutionDialog
 from .report_builder_widget import ReportBuilderWidget
+from .per_sheet_mapping_dialog import PerSheetFieldMappingDialog
 
 __all__ = [
-    'RoleManagerDialog',
     'SmartImportWizard',
     'ConflictResolutionDialog',
-    'ReportBuilderWidget'
+    'ReportBuilderWidget',
+    'PerSheetFieldMappingDialog'
 ]

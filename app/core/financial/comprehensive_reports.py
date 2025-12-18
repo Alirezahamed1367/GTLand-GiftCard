@@ -192,7 +192,11 @@ class ComprehensiveReportBuilder:
         if date is None:
             date = datetime.now()
         
-        target_date = date.date()
+        # اگر date از نوع datetime.date است، مستقیم استفاده کن
+        if isinstance(date, datetime):
+            target_date = date.date()
+        else:
+            target_date = date
         
         # فروش‌های این روز
         daily_sales = self.session.query(Sale).filter(

@@ -13,7 +13,7 @@ import json
 from typing import Tuple
 
 from app.models import SheetConfig
-from app.models.financial import get_financial_session, FieldRole
+from app.models.financial import get_financial_session
 from app.core.database import db_manager
 from app.core.google_sheets import GoogleSheetExtractor
 from app.utils.ui_constants import (

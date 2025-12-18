@@ -26,6 +26,13 @@ class DataType(enum.Enum):
     BOOLEAN = "boolean"
 
 
+class TransferStatus(enum.Enum):
+    """وضعیت انتقال داده"""
+    PENDING = "pending"       # در انتظار انتقال
+    TRANSFERRED = "transferred"  # منتقل شده
+    FAILED = "failed"         # خطا در انتقال
+
+
 class TargetField(enum.Enum):
     """نقش‌های ممکن برای فیلدها"""
     # فیلدهای اصلی
@@ -97,21 +104,41 @@ class RawData(FinancialBase):
     processing_errors = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     
+    # 🆕 سیستم Transfer Tracking
+    transferred = Column(Boolean, default=False, comment="آیا به Account/Sale منتقل شده؟")
+    transferred_at = Column(DateTime, nullable=True, comment="زمان انتقال به سیستم نهایی")
+    transfer_status = Column(
+        SQLEnum(TransferStatus),
+        default=TransferStatus.PENDING,
+        comment="وضعیت انتقال: pending, transferred, failed"
+    )
+    transfer_error = Column(Text, nullable=True, comment="خطای انتقال (اگر failed)")
+    
     # روابط
     sheet_import = relationship("SheetImport", back_populates="raw_data")
     
     def __repr__(self):
-        return f"<RawData(id={self.id}, row={self.row_number}, processed={self.processed})>"
+        return f"<RawData(id={self.id}, row={self.row_number}, processed={self.processed}, transferred={self.transferred})>"
 
 
 class FieldMapping(FinancialBase):
     """
     نقشه‌برداری فیلدها - کاربر تعریف می‌کند هر ستون چه نقشی دارد
+    
+    ⚠️ مهم: این جدول به SheetConfig متصل است (نه SheetImport)
+    هر SheetConfig (Buy, Sale1, Sale2) نقش‌های مخصوص خود را دارد
     """
     __tablename__ = 'field_mappings'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    sheet_import_id = Column(Integer, ForeignKey('sheet_imports.id', ondelete='CASCADE'), nullable=False)
+    
+    # ارتباط با SheetConfig (در دیتابیس اصلی)
+    sheet_config_id = Column(Integer, nullable=True, comment="ID از جدول sheet_configs")
+    sheet_config_name = Column(String(200), nullable=True, comment="نام SheetConfig برای راحتی")
+    
+    # ارتباط با SheetImport (برای سازگاری با کد قدیمی)
+    sheet_import_id = Column(Integer, ForeignKey('sheet_imports.id', ondelete='CASCADE'), nullable=True)
+    
     source_column = Column(String(200), nullable=False)  # نام ستون در شیت
     target_field = Column(SQLEnum(TargetField), nullable=False)  # نقش در سیستم
     data_type = Column(SQLEnum(DataType), nullable=False)

@@ -12,6 +12,7 @@ from datetime import datetime
 
 from app.core.database import DatabaseManager
 from app.models.financial import get_financial_session, RawData
+from app.utils.helpers import generate_unique_key
 from app.core.financial.data_processor import DataProcessor
 
 
@@ -92,7 +93,7 @@ class TransferThread(QThread):
                         try:
                             # بررسی وجود در raw_data
                             data_dict = row['data']
-                            unique_key = RawData.generate_unique_key(
+                            unique_key = generate_unique_key(
                                 data_dict,
                                 ['CODE', 'TR_ID', 'Sold_Date', 'Customer', 'Rate']
                             )

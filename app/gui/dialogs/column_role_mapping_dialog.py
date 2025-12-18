@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 
-from app.models.financial import get_financial_session, FieldRole
+from app.models.financial import get_financial_session
 
 
 class ColumnRoleMappingDialog(QDialog):

@@ -20,9 +20,10 @@ from app.gui.widgets.sheet_list_widget import SheetListWidget
 from app.gui.widgets.extraction_widget import ExtractionWidget
 from app.gui.widgets.reports_widget import ReportsWidget
 from app.gui.widgets.data_viewer_widget import DataViewerWidget
-from app.gui.financial.role_manager_dialog import RoleManagerDialog
 from app.gui.financial.smart_import_wizard import SmartImportWizard
-from app.gui.financial.conflict_resolution_dialog import ConflictResolutionDialog
+from app.gui.financial.comprehensive_reports_widget import ComprehensiveReportsWidget
+from app.gui.financial.inventory_management_widget import InventoryManagementWidget
+from app.gui.financial.per_sheet_mapping_dialog import PerSheetFieldMappingDialog
 from app.utils.ui_constants import (
     FONT_SIZE_TITLE, FONT_SIZE_SECTION, FONT_SIZE_BUTTON,
     BUTTON_HEIGHT_LARGE, BUTTON_HEIGHT_MEDIUM,
@@ -116,6 +117,15 @@ class MainWindow(QMainWindow):
         # تب گزارش‌ساز هوشمند
         self.create_report_builder_tab()
         
+        # تب گزارشات جامع
+        self.create_comprehensive_reports_tab()
+        
+        # تب مدیریت موجودی
+        self.create_inventory_management_tab()
+        
+        # تب مدیریت BI (Smart Import + Field Mapping)
+        self.create_bi_platform_tab()
+        
         main_layout.addWidget(self.tabs)
         
         # نوار وضعیت
@@ -149,10 +159,10 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_data)
         tools_menu.addAction(refresh_action)
         
-        # افزودن مدیریت نقش‌ها
-        role_manager_action = QAction("🎭 مدیریت نقش‌ها", self)
-        role_manager_action.triggered.connect(self.open_role_manager)
-        tools_menu.addAction(role_manager_action)
+        # مدیریت نقش‌های فیلدها (مخصوص هر شیت)
+        per_sheet_mapping_action = QAction("🗂️ مدیریت نقش‌های فیلدها", self)
+        per_sheet_mapping_action.triggered.connect(self.open_per_sheet_mapping)
+        tools_menu.addAction(per_sheet_mapping_action)
         
         # افزودن ویزارد import داده
         import_wizard_action = QAction("🔄 ورود داده از شیت‌ها", self)
@@ -192,20 +202,21 @@ class MainWindow(QMainWindow):
         """)
         
         # دکمه‌های سیستم جدید
-        role_manager_btn = QPushButton("🎭 مدیریت نقش‌ها")
-        role_manager_btn.clicked.connect(self.open_role_manager)
-        role_manager_btn.setToolTip("تعریف نقش‌های فیلدها")
-        toolbar.addWidget(role_manager_btn)
+        per_sheet_mapping_btn = QPushButton("🗂️ نقش‌های فیلدها")
+        per_sheet_mapping_btn.clicked.connect(self.open_per_sheet_mapping)
+        per_sheet_mapping_btn.setToolTip("مدیریت نقش‌های فیلدها به تفکیک شیت")
+        toolbar.addWidget(per_sheet_mapping_btn)
         
         smart_import_btn = QPushButton("🚀 Import هوشمند")
         smart_import_btn.clicked.connect(self.open_smart_import)
         smart_import_btn.setToolTip("Import با گروه‌بندی خودکار")
         toolbar.addWidget(smart_import_btn)
         
-        conflicts_btn = QPushButton("⚠️ تداخل‌ها")
-        conflicts_btn.clicked.connect(self.open_conflicts)
-        conflicts_btn.setToolTip("مدیریت تداخل‌ها")
-        toolbar.addWidget(conflicts_btn)
+        # conflicts_btn = QPushButton("⚠️ تداخل‌ها")
+        # conflicts_btn.clicked.connect(self.open_conflicts)
+        # conflicts_btn.setToolTip("مدیریت تداخل‌ها")
+        # toolbar.addWidget(conflicts_btn)
+        # ⚠️ غیرفعال شد - با RawData قدیمی کار می‌کند
         
         toolbar.addSeparator()
         
@@ -360,6 +371,215 @@ class MainWindow(QMainWindow):
         self.report_builder_widget.export_requested.connect(self.handle_report_export)
         
         self.tabs.addTab(self.report_builder_widget, "📊 گزارش‌ساز هوشمند")
+    
+    def create_comprehensive_reports_tab(self):
+        """ایجاد تب گزارشات جامع (10 نوع گزارش)"""
+        self.comprehensive_reports_widget = ComprehensiveReportsWidget()
+        self.tabs.addTab(self.comprehensive_reports_widget, "📊 گزارشات جامع")
+    
+    def create_inventory_management_tab(self):
+        """ایجاد تب مدیریت موجودی (Inventory Management)"""
+        self.inventory_management_widget = InventoryManagementWidget()
+        self.tabs.addTab(self.inventory_management_widget, "📦 مدیریت موجودی")
+    
+    def create_bi_platform_tab(self):
+        """ایجاد تب مدیریت BI (Smart Import + Tools)"""
+        from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QGroupBox, QLabel
+        
+        bi_widget = QWidget()
+        layout = QVBoxLayout(bi_widget)
+        layout.setSpacing(20)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # عنوان
+        title = QLabel("🔄 مدیریت BI - ابزارهای Import و تنظیمات")
+        title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        title.setStyleSheet("color: #2196F3; padding: 15px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # گروه Smart Import
+        import_group = QGroupBox("📥 Import داده‌ها")
+        import_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 12pt;
+                font-weight: bold;
+                border: 2px solid #2196F3;
+                border-radius: 10px;
+                margin-top: 10px;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 20px;
+                padding: 0 10px;
+            }
+        """)
+        import_layout = QVBoxLayout()
+        import_layout.setSpacing(10)
+        
+        # دکمه Smart Import
+        smart_import_btn = QPushButton("🚀 Smart Import Wizard")
+        smart_import_btn.setMinimumHeight(50)
+        smart_import_btn.setStyleSheet("""
+            QPushButton {
+                background: #4CAF50;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13pt;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background: #45a049;
+            }
+            QPushButton:pressed {
+                background: #3d8b40;
+            }
+        """)
+        smart_import_btn.clicked.connect(self.open_smart_import_wizard)
+        import_layout.addWidget(smart_import_btn)
+        
+        # توضیحات
+        desc = QLabel("📝 Import هوشمند با تشخیص خودکار ستون‌ها و مدیریت تداخل")
+        desc.setStyleSheet("color: #666; font-size: 10pt; padding: 5px;")
+        desc.setWordWrap(True)
+        import_layout.addWidget(desc)
+        
+        import_group.setLayout(import_layout)
+        layout.addWidget(import_group)
+        
+        # گروه تنظیمات Field Mapping
+        mapping_group = QGroupBox("🗂️ تنظیمات نقش‌ها")
+        mapping_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 12pt;
+                font-weight: bold;
+                border: 2px solid #FF9800;
+                border-radius: 10px;
+                margin-top: 10px;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 20px;
+                padding: 0 10px;
+            }
+        """)
+        mapping_layout = QVBoxLayout()
+        mapping_layout.setSpacing(10)
+        
+        # دکمه Per-Sheet Mapping
+        field_mapping_btn = QPushButton("🗂️ مدیریت نقش‌های فیلدها")
+        field_mapping_btn.setMinimumHeight(50)
+        field_mapping_btn.setStyleSheet("""
+            QPushButton {
+                background: #FF9800;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13pt;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background: #FB8C00;
+            }
+            QPushButton:pressed {
+                background: #F57C00;
+            }
+        """)
+        field_mapping_btn.clicked.connect(self.open_per_sheet_mapping)
+        mapping_layout.addWidget(field_mapping_btn)
+        
+        # توضیحات
+        desc2 = QLabel("⚙️ تنظیم نقش‌های فیلدها برای هر شیت (Purchase, Sale, Bonus)")
+        desc2.setStyleSheet("color: #666; font-size: 10pt; padding: 5px;")
+        desc2.setWordWrap(True)
+        mapping_layout.addWidget(desc2)
+        
+        mapping_group.setLayout(mapping_layout)
+        layout.addWidget(mapping_group)
+        
+        # گروه گزارش حرفه‌ای (Professional Grid)
+        grid_group = QGroupBox("📊 گزارش حرفه‌ای")
+        grid_group.setStyleSheet("""
+            QGroupBox {
+                font-size: 12pt;
+                font-weight: bold;
+                border: 2px solid #9C27B0;
+                border-radius: 10px;
+                margin-top: 10px;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 20px;
+                padding: 0 10px;
+            }
+        """)
+        grid_layout = QVBoxLayout()
+        grid_layout.setSpacing(10)
+        
+        # دکمه Professional Grid
+        grid_btn = QPushButton("📊 نمایش گزارش Excel-like")
+        grid_btn.setMinimumHeight(50)
+        grid_btn.setStyleSheet("""
+            QPushButton {
+                background: #9C27B0;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13pt;
+                font-weight: bold;
+                padding: 10px;
+            }
+            QPushButton:hover {
+                background: #8E24AA;
+            }
+            QPushButton:pressed {
+                background: #7B1FA2;
+            }
+        """)
+        grid_btn.clicked.connect(self.open_professional_grid)
+        grid_layout.addWidget(grid_btn)
+        
+        # توضیحات
+        desc3 = QLabel("💎 نمایش داده‌ها به صورت حرفه‌ای: خرید، فروش به تفکیک Platform، سود/زیان")
+        desc3.setStyleSheet("color: #666; font-size: 10pt; padding: 5px;")
+        desc3.setWordWrap(True)
+        grid_layout.addWidget(desc3)
+        
+        grid_group.setLayout(grid_layout)
+        layout.addWidget(grid_group)
+        
+        # گروه مدیریت تداخل - غیرفعال شد
+        # conflict_group = QGroupBox("⚠️ مدیریت تداخل")
+        # ... با RawData قدیمی کار می‌کند - باید بازنویسی شود
+        
+        # فضای خالی
+        layout.addStretch()
+        
+        # راهنما
+        help_label = QLabel(
+            "💡 راهنما:\n"
+            "1. ابتدا نقش‌های فیلدها را برای هر شیت تنظیم کنید\n"
+            "2. سپس از Smart Import Wizard برای Import استفاده کنید\n"
+            "3. در صورت بروز تداخل، از بخش مدیریت تداخل استفاده کنید"
+        )
+        help_label.setStyleSheet("""
+            background: #E3F2FD;
+            border: 2px solid #2196F3;
+            border-radius: 8px;
+            padding: 15px;
+            color: #1565C0;
+            font-size: 10pt;
+        """)
+        help_label.setWordWrap(True)
+        layout.addWidget(help_label)
+        
+        self.tabs.addTab(bi_widget, "🔄 مدیریت BI")
     
     def handle_report_export(self, export_data):
         """مدیریت Export گزارش"""
@@ -523,18 +743,42 @@ class MainWindow(QMainWindow):
             traceback.print_exc()
             QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن ویزارد:\n{str(e)}")
     
-
-    def open_role_manager(self):
-        """باز کردن مدیر نقش‌ها - سیستم جدید"""
+    def open_professional_grid(self):
+        """باز کردن گزارش حرفه‌ای Excel-like"""
         try:
-            dialog = RoleManagerDialog(self)
-            dialog.roles_updated.connect(lambda: self.statusBar().showMessage("✅ نقش‌ها بروزرسانی شد", 3000))
-            dialog.exec()
+            from app.gui.financial.professional_grid_widget import ProfessionalGridWidget
+            
+            # ساخت پنجره جداگانه
+            grid_window = QDialog(self)
+            grid_window.setWindowTitle("📊 گزارش حرفه‌ای - خرید و فروش")
+            grid_window.resize(1400, 800)
+            
+            layout = QVBoxLayout(grid_window)
+            layout.setContentsMargins(0, 0, 0, 0)
+            
+            # افزودن ویجت Grid
+            grid_widget = ProfessionalGridWidget()
+            layout.addWidget(grid_widget)
+            
+            grid_window.exec()
             
         except Exception as e:
             import traceback
             traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر نقش‌ها:\n{str(e)}")
+            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن گزارش:\n{str(e)}")
+    
+
+    def open_per_sheet_mapping(self):
+        """باز کردن مدیریت نقش‌ها به تفکیک شیت - سیستم جدیدتر!"""
+        try:
+            dialog = PerSheetFieldMappingDialog(self)
+            dialog.exec()
+            self.statusBar().showMessage("✅ نقش‌های شیت بروزرسانی شد", 3000)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر نقش‌های شیت:\n{str(e)}")
     
     def open_smart_import(self):
         """باز کردن Import هوشمند - سیستم جدید"""
@@ -550,15 +794,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "خطا", f"❌ خطا در Import:\n{str(e)}")
     
     def open_conflicts(self):
-        """باز کردن مدیریت تداخل‌ها - سیستم جدید"""
-        try:
-            dialog = ConflictResolutionDialog(self)
-            dialog.exec()
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیریت تداخل‌ها:\n{str(e)}")
+        """باز کردن مدیریت تداخل‌ها - DEPRECATED"""
+        QMessageBox.information(
+            self, "⚠️ غیرفعال",
+            "این بخش با سیستم قدیمی کار می‌کند و غیرفعال شده است.\n\n"
+            "از Smart Import Wizard برای Import استفاده کنید."
+        )
     
     def closeEvent(self, event):
         """رویداد بستن برنامه"""

@@ -37,6 +37,36 @@ class DataViewerWidget(QWidget):
         toolbar = self.create_toolbar()
         layout.addWidget(toolbar)
         
+        # 🆕 کارت‌های آماری
+        self.stats_container = QFrame()
+        self.stats_container.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 10px;
+                padding: 15px;
+            }
+        """)
+        stats_layout = QHBoxLayout(self.stats_container)
+        stats_layout.setSpacing(15)
+        
+        # کارت کل داده‌ها
+        self.total_card = self.create_stat_card("📊 کل داده‌ها", "0", "#3b82f6")
+        stats_layout.addWidget(self.total_card)
+        
+        # کارت منتقل شده
+        self.transferred_card = self.create_stat_card("✅ منتقل شده", "0", "#10b981")
+        stats_layout.addWidget(self.transferred_card)
+        
+        # کارت در انتظار
+        self.pending_card = self.create_stat_card("⏳ در انتظار", "0", "#f59e0b")
+        stats_layout.addWidget(self.pending_card)
+        
+        # کارت خطا
+        self.failed_card = self.create_stat_card("❌ خطا", "0", "#ef4444")
+        stats_layout.addWidget(self.failed_card)
+        
+        layout.addWidget(self.stats_container)
+        
         # Scroll Area برای کارت‌ها
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -51,6 +81,41 @@ class DataViewerWidget(QWidget):
         
         scroll.setWidget(self.cards_container)
         layout.addWidget(scroll)
+    
+    def create_stat_card(self, title: str, value: str, color: str):
+        """ایجاد کارت آماری کوچک"""
+        card = QFrame()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {color};
+                border-radius: 8px;
+                padding: 12px;
+            }}
+        """)
+        card.setFixedHeight(70)  # کوچک‌تر
+        
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(4)
+        card_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # عنوان
+        title_label = QLabel(title)
+        title_label.setFont(QFont("Tahoma", 8, QFont.Weight.Bold))
+        title_label.setStyleSheet("color: white; background: transparent;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(title_label)
+        
+        # مقدار
+        value_label = QLabel(value)
+        value_label.setFont(QFont("Tahoma", 18, QFont.Weight.Bold))
+        value_label.setStyleSheet("color: white; background: transparent;")
+        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card_layout.addWidget(value_label)
+        
+        # ذخیره reference برای بروزرسانی
+        card.value_label = value_label
+        
+        return card
         
     def create_toolbar(self):
         """ایجاد نوار ابزار"""
@@ -119,6 +184,25 @@ class DataViewerWidget(QWidget):
         """)
         deselect_all_btn.clicked.connect(self.deselect_all_sheets)
         layout.addWidget(deselect_all_btn)
+        
+        # 🆕 دکمه انتقال دسته‌جمعی
+        bulk_transfer_btn = QPushButton("⚡ انتقال دسته‌جمعی")
+        bulk_transfer_btn.setToolTip("انتقال تمام داده‌های منتقل نشده یکجا")
+        bulk_transfer_btn.setFont(QFont("Tahoma", 10, QFont.Weight.Bold))
+        bulk_transfer_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #10b981;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+            }}
+            QPushButton:hover {{
+                background-color: #059669;
+            }}
+        """)
+        bulk_transfer_btn.clicked.connect(self.bulk_transfer_all_pending)
+        layout.addWidget(bulk_transfer_btn)
         
         # دکمه انتقال به مرحله بعد (Stage 2)
         transfer_btn = QPushButton("🚀 انتقال به مرحله بعدی")
@@ -191,6 +275,9 @@ class DataViewerWidget(QWidget):
         # دریافت آمار
         stats = self.db_manager.get_all_sheets_statistics()
         
+        # 🆕 محاسبه و نمایش آمار کلی
+        self.update_overall_stats()
+        
         if not stats:
             no_data = QLabel("هیچ شیتی استخراج نشده است")
             no_data.setFont(QFont("Segoe UI", 14))
@@ -209,6 +296,40 @@ class DataViewerWidget(QWidget):
             if col >= 4:  # 4 کارت در هر ردیف
                 col = 0
                 row += 1
+    
+    def update_overall_stats(self):
+        """بروزرسانی کارت‌های آماری کلی"""
+        try:
+            from app.models.financial import get_financial_session, RawData, TransferStatus
+            
+            session = get_financial_session()
+            
+            # کل داده‌ها
+            total = session.query(RawData).count()
+            
+            # منتقل شده
+            transferred = session.query(RawData).filter_by(transferred=True).count()
+            
+            # در انتظار
+            pending = session.query(RawData).filter(
+                (RawData.transfer_status == TransferStatus.PENDING) | (RawData.transfer_status == None)
+            ).count()
+            
+            # خطا
+            failed = session.query(RawData).filter_by(
+                transfer_status=TransferStatus.FAILED
+            ).count()
+            
+            # بروزرسانی کارت‌ها
+            self.total_card.value_label.setText(str(total))
+            self.transferred_card.value_label.setText(str(transferred))
+            self.pending_card.value_label.setText(str(pending))
+            self.failed_card.value_label.setText(str(failed))
+            
+            session.close()
+            
+        except Exception as e:
+            logger.error(f"خطا در بروزرسانی آمار: {e}")
     
     def create_simple_card(self, stat):
         """ایجاد کارت ساده بدون آمار"""
@@ -310,6 +431,40 @@ class DataViewerWidget(QWidget):
         status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         status.setMinimumHeight(30)
         main_layout.addWidget(status)
+        
+        # 🆕 ========== آمار انتقال برای این شیت ==========
+        try:
+            from app.models.financial import get_financial_session, SheetImport, RawData
+            session = get_financial_session()
+            
+            # پیدا کردن SheetImport با نام این شیت
+            sheet_import = session.query(SheetImport).filter_by(sheet_name=stat['name']).first()
+            
+            if sheet_import:
+                total_rows = session.query(RawData).filter_by(sheet_import_id=sheet_import.id).count()
+                transferred_rows = session.query(RawData).filter_by(sheet_import_id=sheet_import.id, transferred=True).count()
+                pending_rows = total_rows - transferred_rows
+                
+                stats_text = f"📊 کل: {total_rows} | ✅ منتقل: {transferred_rows} | ⏳ باقی: {pending_rows}"
+            else:
+                stats_text = "📊 آماری موجود نیست"
+            
+            session.close()
+        except:
+            stats_text = "📊 آماری موجود نیست"
+        
+        stats_label = QLabel(stats_text)
+        stats_label.setFont(QFont("Tahoma", 8, QFont.Weight.Bold))
+        stats_label.setStyleSheet("""
+            QLabel {
+                color: #495057;
+                background-color: #e9ecef;
+                padding: 6px;
+                border-radius: 4px;
+            }
+        """)
+        stats_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout.addWidget(stats_label)
         
         # ========== ردیف 3: تاریخ ==========
         if stat['last_extract']:
@@ -463,133 +618,65 @@ class DataViewerWidget(QWidget):
         self.show_sheet_details(stat['sheet_config_id'])
     
     def transfer_to_stage2(self):
-        """انتقال داده‌ها به مرحله بعدی (Stage 2) با پردازش نقش‌ها"""
+        """
+        انتقال داده‌ها به سیستم مالی جدید (Label-Based System)
+        
+        این متد داده‌های استخراج شده را به سیستم مالی منتقل می‌کند:
+        1. بررسی وجود Import های قبلی
+        2. باز کردن Smart Import Wizard
+        """
         if not self.selected_sheets:
             QMessageBox.warning(self, "هشدار", "⚠️ لطفاً حداقل یک شیت انتخاب کنید")
             return
         
-        # بررسی نقش‌ها و نگاشت ستون‌های هر شیت
-        try:
-            from app.models.financial import get_financial_session, FieldRole
-            from app.core.google_sheets import GoogleSheetExtractor
-            
-            db = get_financial_session()
-            
-            # بررسی وجود نقش‌های پایه
-            roles_count = db.query(FieldRole).filter(FieldRole.is_active == True).count()
-            
-            if roles_count == 0:
+        # نمایش پیام راهنما
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("🔄 انتقال به سیستم مالی")
+        msg.setText(
+            "📊 انتقال داده‌ها به سیستم مالی جدید\n\n"
+            "سیستم جدید Label-Based دارای ویژگی‌های زیر است:\n"
+            "✅ Field Mapping پویا\n"
+            "✅ محاسبه خودکار سود\n"
+            "✅ مدیریت موجودی\n"
+            "✅ گزارشات پیشرفته\n\n"
+            "برای Import داده‌ها:\n"
+            "1️⃣ به تب '🔄 مدیریت BI' بروید\n"
+            "2️⃣ روی دکمه '🚀 Smart Import Wizard' کلیک کنید\n"
+            "3️⃣ شیت مورد نظر را انتخاب کنید\n"
+            "4️⃣ Field Mapping را انجام دهید\n"
+            "5️⃣ Process را اجرا کنید\n\n"
+            "آیا می‌خواهید به تب مدیریت BI بروید?"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+        
+        result = msg.exec()
+        
+        if result == QMessageBox.StandardButton.Yes:
+            # پیدا کردن MainWindow و تغییر تب به BI Management
+            main_window = self.window()
+            if hasattr(main_window, 'tabs'):
+                # پیدا کردن index تب BI Management
+                for i in range(main_window.tabs.count()):
+                    tab_text = main_window.tabs.tabText(i)
+                    if 'مدیریت BI' in tab_text or 'BI' in tab_text:
+                        main_window.tabs.setCurrentIndex(i)
+                        QMessageBox.information(
+                            self,
+                            "✅ تب تغییر کرد",
+                            "حالا می‌توانید از دکمه '🚀 Smart Import Wizard' استفاده کنید."
+                        )
+                        return
+                
+                # اگر تب پیدا نشد
                 QMessageBox.warning(
-                    self, "⚠️ نقش‌ها تعریف نشده",
-                    "❌ نقش‌های پایه تعریف نشده است!\n\n"
-                    "لطفاً ابتدا از منوی 'ابزارها' → 'تنظیمات مالی' → 'مدیریت نقش‌ها'\n"
-                    "نقش‌های پایه را تعریف کنید."
+                    self,
+                    "⚠️ تب یافت نشد",
+                    "تب مدیریت BI یافت نشد.\n\n"
+                    "لطفاً برنامه را مجدداً اجرا کنید یا از منوی ابزارها → Smart Import Wizard استفاده کنید."
                 )
-                db.close()
                 return
-            
-            # 🔍 بررسی دقیق هر شیت انتخابی
-            sheets_without_mapping = []
-            sheets_missing_roles = []  # {sheet_name: [missing_roles]}
-            
-            extractor = GoogleSheetExtractor()
-            
-            for sheet_id in self.selected_sheets:
-                sheet_config = self.db_manager.get_sheet_config(sheet_id)
-                if not sheet_config:
-                    continue
-                
-                # دریافت ستون‌های شیت
-                try:
-                    headers = extractor.get_headers(sheet_config.sheet_url, sheet_config.worksheet_name)
-                except Exception as e:
-                    print(f"❌ خطا در دریافت ستون‌های شیت {sheet_config.name}: {e}")
-                    continue
-                
-                if not headers:
-                    continue
-                
-                # بررسی نگاشت هر ستون
-                mapped_columns = db.query(CustomField).filter(
-                    CustomField.name.in_(headers),
-                    CustomField.is_active == True
-                ).all()
-                
-                if not mapped_columns:
-                    sheets_without_mapping.append(sheet_config.name)
-                    continue
-                
-                # بررسی نقش‌های ضروری
-                mapped_roles = set()
-                for field in mapped_columns:
-                    if field.role_id:
-                        role = db.query(FieldRole).filter(FieldRole.id == field.role_id).first()
-                        if role:
-                            mapped_roles.add(role.name)
-                
-                required_roles = {'identifier', 'value', 'rate'}
-                missing = required_roles - mapped_roles
-                
-                if missing:
-                    sheets_missing_roles.append({
-                        'name': sheet_config.name,
-                        'missing': list(missing)
-                    })
-            
-            db.close()
-            
-            # گزارش مشکلات
-            if sheets_without_mapping or sheets_missing_roles:
-                error_msg = "❌ برخی شیت‌ها نگاشت ستون کامل ندارند:\n\n"
-                
-                if sheets_without_mapping:
-                    error_msg += "🔴 شیت‌های بدون نگاشت:\n"
-                    for sheet_name in sheets_without_mapping:
-                        error_msg += f"  • {sheet_name}\n"
-                    error_msg += "\n"
-                
-                if sheets_missing_roles:
-                    error_msg += "🟡 شیت‌هایی که نقش‌های ضروری ندارند:\n"
-                    for sheet_info in sheets_missing_roles:
-                        missing_fa = []
-                        for role in sheet_info['missing']:
-                            if role == 'identifier':
-                                missing_fa.append('کد محصول')
-                            elif role == 'value':
-                                missing_fa.append('مقدار')
-                            elif role == 'rate':
-                                missing_fa.append('نرخ')
-                        error_msg += f"  • {sheet_info['name']}: {', '.join(missing_fa)}\n"
-                    error_msg += "\n"
-                
-                error_msg += (
-                    "📌 برای رفع مشکل:\n"
-                    "  1️⃣ به تب 'مدیریت شیت‌ها' بروید\n"
-                    "  2️⃣ شیت مشکل‌دار را ویرایش کنید\n"
-                    "  3️⃣ دکمه 'تست ارتباط' را بزنید\n"
-                    "  4️⃣ نقش‌های ضروری را تنظیم کنید\n"
-                    "  5️⃣ ذخیره کنید\n\n"
-                    "آیا می‌خواهید الان به تب 'مدیریت شیت‌ها' بروید؟"
-                )
-                
-                reply = QMessageBox.question(
-                    self, "⚠️ نقش‌های ستون‌ها ناقص",
-                    error_msg,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                
-                if reply == QMessageBox.StandardButton.Yes:
-                    main_window = self.window()
-                    if hasattr(main_window, 'tabs'):
-                        main_window.tabs.setCurrentIndex(0)
-                
-                return
-            
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "خطا", f"❌ خطا در بررسی نقش‌ها:\n{str(e)}")
-            return
         
         # نمایش دیالوگ تأیید و انتخاب گزینه‌ها
         from app.gui.dialogs.transfer_dialog import TransferToStage2Dialog
@@ -605,11 +692,86 @@ class DataViewerWidget(QWidget):
             )
     
     def open_role_manager(self):
-        """باز کردن مدیر نقش‌ها"""
+        """باز کردن مدیر نقش‌ها - هدایت به سیستم جدید"""
         try:
-            from app.gui.financial.role_manager_dialog import RoleManagerDialog
-            dialog = RoleManagerDialog(self)
+            from app.gui.financial.per_sheet_mapping_dialog import PerSheetFieldMappingDialog
+            dialog = PerSheetFieldMappingDialog(self)
             dialog.exec()
         except Exception as e:
             QMessageBox.critical(self, "خطا", f"❌ خطا در باز کردن مدیر نقش‌ها:\n{str(e)}")
+    
+    def bulk_transfer_all_pending(self):
+        """انتقال دسته‌جمعی تمام داده‌های منتقل نشده"""
+        try:
+            from app.models.financial import get_financial_session, SheetImport, RawData, TransferStatus
+            from app.core.financial import DynamicDataProcessor
+            
+            session = get_financial_session()
+            
+            # پیدا کردن شیت‌هایی که داده منتقل نشده دارند
+            sheets_with_pending = session.query(SheetImport).join(RawData).filter(
+                RawData.transferred == False
+            ).distinct().all()
+            
+            if not sheets_with_pending:
+                QMessageBox.information(
+                    self, "✅ تمام",
+                    "تمام داده‌ها قبلاً منتقل شده‌اند!"
+                )
+                session.close()
+                return
+            
+            # نمایش تأیید
+            reply = QMessageBox.question(
+                self,
+                "⚡ انتقال دسته‌جمعی",
+                f"🔄 {len(sheets_with_pending)} شیت با داده منتقل نشده پیدا شد.\n\n"
+                f"آیا می‌خواهید همه را به سیستم نهایی منتقل کنید؟\n\n"
+                f"⚠️ این فرآیند ممکن است چند دقیقه طول بکشد.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                session.close()
+                return
+            
+            # پردازش هر شیت
+            processor = DynamicDataProcessor(session)
+            total_processed = 0
+            total_errors = 0
+            
+            for sheet in sheets_with_pending:
+                try:
+                    logger.info(f"پردازش شیت: {sheet.sheet_name}")
+                    stats = processor.process_sheet(sheet.id)
+                    total_processed += stats['processed']
+                    total_errors += stats['errors']
+                except Exception as e:
+                    logger.error(f"خطا در پردازش {sheet.sheet_name}: {e}")
+                    total_errors += 1
+            
+            session.close()
+            
+            # بروزرسانی UI
+            self.load_sheets()
+            
+            # نمایش نتیجه
+            QMessageBox.information(
+                self,
+                "✅ انتقال دسته‌جمعی تکمیل شد",
+                f"📊 آمار:\n\n"
+                f"✅ پردازش شده: {total_processed}\n"
+                f"❌ خطا: {total_errors}\n\n"
+                f"💡 برای مشاهده جزئیات به گزارش‌ساز بروید."
+            )
+            
+        except Exception as e:
+            logger.error(f"خطا در انتقال دسته‌جمعی: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(
+                self, "خطا",
+                f"❌ خطا در انتقال دسته‌جمعی:\n{str(e)}"
+            )
+
 

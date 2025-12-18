@@ -17,12 +17,13 @@ from datetime import datetime
 import uuid
 
 from app.models.financial import (
-    FieldRole, FieldMapping, RawData,
+    FieldMapping, RawData, ImportBatch,
     get_financial_session
 )
 from app.models.sheet_config import SheetConfig
 from app.core.database import db_manager
 from app.core.google_sheets import GoogleSheetExtractor
+from app.utils.helpers import generate_unique_key
 from app.core.financial.data_processor import DataProcessor
 
 
@@ -78,7 +79,71 @@ class ImportThread(QThread):
             
             self.progress.emit(20, f"✅ {len(rows)} ردیف دریافت شد")
             
-            # 2. تولید Unique Key
+            # 2. ایجاد SheetImport
+            self.progress.emit(25, "📋 ایجاد SheetImport...")
+            
+            from app.models.financial import SheetImport, SheetType
+            
+            # تشخیص نوع شیت
+            sheet_type = SheetType.PURCHASE  # پیش‌فرض
+            sheet_name_lower = self.config['sheet_name'].lower()
+            if 'sale' in sheet_name_lower or 'فروش' in sheet_name_lower:
+                sheet_type = SheetType.SALE
+            elif 'bonus' in sheet_name_lower or 'بونوس' in sheet_name_lower:
+                sheet_type = SheetType.BONUS
+            
+            # استخراج platform از نام شیت (اگر در نام شیت باشد)
+            platform = None
+            for p in ['roblox', 'apple', 'steam', 'nintendo']:
+                if p in sheet_name_lower:
+                    platform = p
+                    break
+            
+            sheet_import = SheetImport(
+                sheet_name=self.config['sheet_name'],
+                sheet_type=sheet_type,
+                platform=platform,
+                total_rows=len(rows),
+                processed_rows=0
+            )
+            db.add(sheet_import)
+            db.commit()
+            
+            sheet_import_id = sheet_import.id
+            
+            # 2.5. کپی FieldMapping از SheetConfig به SheetImport
+            self.progress.emit(27, "🗂️ کپی Field Mapping...")
+            
+            sheet_config_id = self.config.get('sheet_config_id')
+            if sheet_config_id:
+                # بارگذاری FieldMapping های SheetConfig
+                from app.models.financial import FieldMapping
+                
+                config_mappings = db.query(FieldMapping).filter_by(
+                    sheet_config_id=sheet_config_id
+                ).all()
+                
+                # کپی به SheetImport
+                for mapping in config_mappings:
+                    new_mapping = FieldMapping(
+                        sheet_import_id=sheet_import_id,
+                        sheet_config_id=mapping.sheet_config_id,
+                        sheet_config_name=mapping.sheet_config_name,
+                        source_column=mapping.source_column,
+                        target_field=mapping.target_field,
+                        data_type=mapping.data_type,
+                        is_required=mapping.is_required,
+                        default_value=mapping.default_value,
+                        transformation_rule=mapping.transformation_rule
+                    )
+                    db.add(new_mapping)
+                
+                db.commit()
+                self.progress.emit(28, f"✅ {len(config_mappings)} Field Mapping کپی شد")
+            else:
+                self.progress.emit(28, "⚠️ هیچ Field Mapping یافت نشد - از پیش‌فرض استفاده می‌شود")
+            
+            # 3. تولید Unique Key
             self.progress.emit(30, "🔑 تولید Unique Key...")
             
             unique_key_fields = self._get_unique_key_fields(db)
@@ -115,62 +180,19 @@ class ImportThread(QThread):
                         if j < len(headers):
                             data_dict[headers[j]] = value
                     
-                    # تولید unique key
-                    unique_key = RawData.generate_unique_key(data_dict, unique_key_fields)
+                    # تولید unique key (فقط برای لاگ - در RawData جدید استفاده نمی‌شود)
+                    unique_key = generate_unique_key(data_dict, unique_key_fields)
                     
-                    # بررسی وجود
-                    existing = db.query(RawData).filter(
-                        RawData.unique_key == unique_key
-                    ).first()
+                    # ساخت RawData جدید (سیستم ساده - بدون duplicate detection)
+                    raw_data = RawData(
+                        sheet_import_id=sheet_import_id,
+                        row_number=i + 2,
+                        data=data_dict,
+                        processed=False
+                    )
                     
-                    if existing:
-                        # بررسی تغییرات
-                        has_changed, changes = existing.detect_changes(data_dict)
-                        
-                        if has_changed:
-                            # داده تغییر کرده
-                            existing.previous_data = existing.data
-                            existing.data = data_dict
-                            existing.data_hash = RawData.generate_data_hash(data_dict)
-                            existing.change_detected_at = datetime.now()
-                            existing.change_reason = 'data_changed'
-                            existing.last_seen_at = datetime.now()
-                            
-                            # اگر Extracted باشد، conflict می‌شود
-                            if existing.is_extracted:
-                                existing.has_conflict = True
-                                existing.conflict_type = 'data_mismatch'
-                                stats["conflicts"] += 1
-                            else:
-                                stats["updated"] += 1
-                        else:
-                            # بدون تغییر
-                            existing.last_seen_at = datetime.now()
-                            stats["unchanged"] += 1
-                    else:
-                        # ردیف جدید
-                        # همیشه is_extracted=True برای پردازش خودکار
-                        # (اگر ستون Extracted در شیت وجود داشت، از اون استفاده می‌کنیم)
-                        extracted_value = data_dict.get('Extracted', 'FALSE')
-                        is_extracted_bool = str(extracted_value).strip().upper() == 'TRUE'
-                        
-                        # اگر auto_process فعال باشه، همیشه True
-                        if self.config.get('auto_process', False):
-                            is_extracted_bool = True
-                        
-                        raw = RawData(
-                            sheet_name=self.config['sheet_name'],
-                            sheet_id=self.config['sheet_id'],
-                            unique_key=unique_key,
-                            unique_key_fields=unique_key_fields,
-                            data=data_dict,
-                            row_number=i + 2,  # +2 چون ردیف 1 هدر است
-                            is_extracted=is_extracted_bool,
-                            import_batch_id=batch_id,
-                            import_source='google_sheets'
-                        )
-                        db.add(raw)
-                        stats["new"] += 1
+                    db.add(raw_data)
+                    stats["new"] += 1
                     
                     # Commit بعد از هر ردیف موفق
                     db.commit()
@@ -185,31 +207,39 @@ class ImportThread(QThread):
                     stats["errors"] += 1
                     print(f"❌ خطا در ردیف {i+2}: {e}")
             
-            # 4. پردازش (Stage 1 → Stage 2)
-            if self.config.get('auto_process', False):
-                self.progress.emit(85, "⚙️ پردازش داده‌ها...")
-                
-                processor = DataProcessor(db)
-                process_stats = processor.process_sheet(
-                    sheet_name=self.config['sheet_name'],
-                    sheet_type=self.config.get('sheet_type', 'sale'),
-                    enable_grouping=self.config.get('enable_grouping', True)
-                )
-                
-                stats.update(process_stats)
+            # بروزرسانی SheetImport
+            sheet_import.processed_rows = stats["new"]
+            db.commit()
             
-            # 5. بروزرسانی آمار batch
+            # بروزرسانی ImportBatch
             import_batch.new_rows = stats["new"]
-            import_batch.updated_rows = stats["updated"]
-            import_batch.unchanged_rows = stats["unchanged"]
-            import_batch.error_rows = stats["errors"]
             import_batch.status = 'completed'
             import_batch.completed_at = datetime.now()
-            
-            duration = (datetime.now() - import_batch.started_at).total_seconds()
-            import_batch.duration_seconds = int(duration)
-            
             db.commit()
+            
+            # 4. پردازش (RawData → Account/Sale با استفاده از FieldMapping)
+            if self.config.get('auto_process', True):  # ✅ فعال شد
+                self.progress.emit(85, "⚙️ پردازش داده‌ها با Field Mapping...")
+                
+                try:
+                    from app.core.financial.dynamic_processor import DynamicDataProcessor
+                    
+                    processor = DynamicDataProcessor(db)
+                    process_stats = processor.process_sheet(sheet_import_id)
+                    
+                    # اضافه کردن آمار پردازش
+                    stats['processed'] = process_stats.get('processed', 0)
+                    stats['process_errors'] = process_stats.get('errors', 0)
+                    
+                    self.progress.emit(95, f"✅ پردازش تکمیل: {stats['processed']} موفق")
+                    
+                except Exception as e:
+                    # اگر پردازش خطا داد، Import موفق بوده ولی Process نه
+                    stats['process_errors'] = 1
+                    stats['process_error_msg'] = str(e)
+                    self.progress.emit(90, f"⚠️ خطا در پردازش: {str(e)}")
+            
+            # اتمام
             db.close()
             
             self.progress.emit(100, "✅ اتمام Import")
@@ -219,23 +249,10 @@ class ImportThread(QThread):
             self.error.emit(f"خطای کلی: {str(e)}")
     
     def _get_unique_key_fields(self, db):
-        """دریافت فیلدهای Unique Key"""
-        roles = db.query(FieldRole).filter(
-            FieldRole.used_in_unique_key == True,
-            FieldRole.is_active == True
-        ).order_by(FieldRole.unique_key_priority).all()
-        
-        field_names = []
-        for role in roles:
-            fields = db.query(CustomField).filter(
-                CustomField.role_id == role.id,
-                CustomField.is_active == True
-            ).all()
-            
-            for field in fields:
-                field_names.append(field.name)
-        
-        return field_names or ['CODE', 'TR_ID', 'Sold_Date', 'Customer', 'Rate']
+        """دریافت فیلدهای Unique Key - سیستم جدید"""
+        # TODO: باید از sheet_config_id و FieldMapping استفاده کنیم
+        # فعلاً از مقادیر پیش‌فرض استفاده می‌کنیم
+        return ['ACCOUNT_ID', 'PURCHASE_DATE', 'PURCHASE_COST']
 
 
 class SheetSelectionPage(QWizardPage):
@@ -377,7 +394,8 @@ class SheetSelectionPage(QWizardPage):
         
         return {
             'sheet_name': sheet_name,
-            'sheet_id': sheet_info.get('id'),  # ⭐ اضافه شد
+            'sheet_id': sheet_info.get('id'),  # ⭐ sheet_config id
+            'sheet_config_id': sheet_info.get('id'),  # ✅ برای FieldMapping
             'sheet_url': sheet_info.get('url'),
             'worksheet_name': sheet_info.get('worksheet'),
             'sheet_config': sheet_info.get('config'),

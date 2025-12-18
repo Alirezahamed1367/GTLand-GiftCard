@@ -15,8 +15,7 @@ from app.models.financial import (
     AccountSilver,
     Sale,
     SaleType,
-    Customer,
-    FieldRole
+    Customer
 )
 from app.core.logger import app_logger
 

@@ -171,14 +171,16 @@ class SaleType(str, Enum):
 
 class Sale(FinancialBase):
     """
-    فروش‌ها - گلد یا سیلور
+    فروش‌ها - گلد یا سیلور با محاسبه دقیق سود
     
     مثال:
         Label: g450
         Type: gold
         Quantity: 10
-        Rate: 4.50
-        Amount: 45.00$
+        Sale Rate: 4.50 (ریت فروش)
+        Sale Amount: 45.00$ (مبلغ فروش)
+        Cost Basis: 30.00$ (بهای تمام شده)
+        Profit: 15.00$ (سود)
         Customer: PX
     """
     __tablename__ = 'sales'
@@ -190,7 +192,6 @@ class Sale(FinancialBase):
     account = relationship("Account", back_populates="sales")
     
     # پلتفرم فروش (roblox, apple, nintendo, pubg, freefire, ...)
-    # توجه: فعلاً String است - بعداً می‌توان به FK تبدیل کرد
     platform = Column(String(50), nullable=True, index=True, comment="پلتفرم فروش")
     
     # نوع فروش
@@ -199,11 +200,17 @@ class Sale(FinancialBase):
     # مقدار فروش
     quantity = Column(Numeric(20, 4), nullable=False, comment="مقدار فروخته شده")
     
-    # نرخ فروش
-    sale_rate = Column(Numeric(20, 6), nullable=False, comment="نرخ فروش هر واحد")
+    # نرخ فروش (برای هر فروش متفاوت است)
+    sale_rate = Column(Numeric(20, 6), nullable=False, comment="نرخ فروش هر واحد (مثلاً 1 Gold = 10,000 Robux)")
     
-    # مبلغ کل
-    sale_amount = Column(Numeric(20, 2), nullable=False, comment="quantity × sale_rate")
+    # مبلغ فروش
+    sale_amount = Column(Numeric(20, 2), nullable=False, comment="quantity × sale_rate (مبلغ دریافتی)")
+    
+    # 🚀 بهای تمام شده (هزینه تولید این فروش)
+    cost_basis = Column(Numeric(20, 2), nullable=True, default=0, comment="بهای تمام شده (quantity × نرخ خرید آکانت)")
+    
+    # 🚀 سود محاسبه شده
+    profit = Column(Numeric(20, 2), nullable=True, default=0, comment="سود واقعی (sale_amount - cost_basis)")
     
     # مشتری
     customer = Column(String(200), nullable=True, index=True, comment="کد مشتری")
@@ -230,10 +237,26 @@ class Sale(FinancialBase):
     __table_args__ = (
         Index('idx_sales_label_type', 'label', 'sale_type'),
         Index('idx_sales_customer_date', 'customer', 'sale_date'),
+        Index('idx_sales_platform_date', 'platform', 'sale_date'),
     )
     
     def __repr__(self):
-        return f"<Sale(label='{self.label}', platform='{self.platform}', type='{self.sale_type}', quantity={self.quantity})>"
+        return f"<Sale(label='{self.label}', platform='{self.platform}', type='{self.sale_type}', qty={self.quantity}, profit={self.profit})>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "label": self.label,
+            "platform": self.platform,
+            "sale_type": self.sale_type,
+            "quantity": float(self.quantity) if self.quantity else 0,
+            "sale_rate": float(self.sale_rate) if self.sale_rate else 0,
+            "sale_amount": float(self.sale_amount) if self.sale_amount else 0,
+            "cost_basis": float(self.cost_basis) if self.cost_basis else 0,
+            "profit": float(self.profit) if self.profit else 0,
+            "customer": self.customer,
+            "sale_date": self.sale_date.isoformat() if self.sale_date else None
+        }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -326,12 +349,17 @@ class AccountSummary(FinancialBase):
 
 
 # ═══════════════════════════════════════════════════════════════
-# 6. مشتریان
+# 6. مشتریان (با سیستم پرداخت و بدهی)
 # ═══════════════════════════════════════════════════════════════
 
 class Customer(FinancialBase):
     """
-    مشتریان
+    مشتریان - با سیستم اعتبار و پرداخت
+    
+    تمام فروش‌ها نسیه است:
+    - total_spent = بدهکار (کل خریدها)
+    - total_paid = بستانکار (کل پرداخت‌ها)
+    - balance = total_spent - total_paid (مانده بدهی)
     """
     __tablename__ = 'customers'
     
@@ -343,11 +371,19 @@ class Customer(FinancialBase):
     # نام (اختیاری)
     name = Column(String(300), nullable=True)
     
-    # آمار
+    # ═══ حساب مالی ═══
+    total_spent = Column(Numeric(20, 2), default=0, comment="مبلغ کل خرج شده (بدهکار)")
+    total_paid = Column(Numeric(20, 2), default=0, comment="مبلغ کل پرداخت شده (بستانکار)")
+    balance = Column(Numeric(20, 2), default=0, comment="مانده بدهی (total_spent - total_paid)")
+    
+    # ═══ آمار خرید ═══
     total_purchases = Column(Integer, default=0, comment="تعداد خریدها")
-    total_spent = Column(Numeric(20, 2), default=0, comment="مبلغ کل خرج شده")
     total_gold_bought = Column(Numeric(20, 4), default=0, comment="کل گلد خریداری شده")
     total_silver_bought = Column(Numeric(20, 4), default=0, comment="کل سیلور خریداری شده")
+    
+    # ═══ آمار پرداخت ═══
+    total_payments = Column(Integer, default=0, comment="تعداد پرداخت‌ها")
+    last_payment_date = Column(DateTime, nullable=True, comment="آخرین پرداخت")
     
     # اطلاعات تماس (اختیاری)
     phone = Column(String(50), nullable=True)
@@ -358,5 +394,105 @@ class Customer(FinancialBase):
     last_purchase_at = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     
+    # روابط
+    payments = relationship("Payment", back_populates="customer", cascade="all, delete-orphan")
+    
     def __repr__(self):
-        return f"<Customer(code='{self.code}', purchases={self.total_purchases})>"
+        return f"<Customer(code='{self.code}', balance={self.balance})>"
+    
+    def to_dict(self):
+        return {
+            "code": self.code,
+            "name": self.name,
+            "financial": {
+                "total_spent": float(self.total_spent) if self.total_spent else 0,
+                "total_paid": float(self.total_paid) if self.total_paid else 0,
+                "balance": float(self.balance) if self.balance else 0
+            },
+            "stats": {
+                "purchases": self.total_purchases,
+                "payments": self.total_payments,
+                "gold_bought": float(self.total_gold_bought) if self.total_gold_bought else 0,
+                "silver_bought": float(self.total_silver_bought) if self.total_silver_bought else 0
+            },
+            "dates": {
+                "first_purchase": self.first_purchase_at.isoformat() if self.first_purchase_at else None,
+                "last_purchase": self.last_purchase_at.isoformat() if self.last_purchase_at else None,
+                "last_payment": self.last_payment_date.isoformat() if self.last_payment_date else None
+            }
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+# 7. پرداخت‌های مشتریان (Tether/Toman)
+# ═══════════════════════════════════════════════════════════════
+
+class Payment(FinancialBase):
+    """
+    پرداخت‌های مشتریان
+    
+    دو نوع:
+    - TETHER: مستقیماً به دلار
+    - TOMAN: نیاز به نرخ تبدیل
+    
+    مثال:
+        Customer: C001
+        Amount: 500,000 تومان
+        Exchange Rate: 65,000
+        Amount USD: 7.69$
+    """
+    __tablename__ = 'payments'
+    
+    id = Column(Integer, primary_key=True)
+    
+    # مشتری
+    customer_code = Column(String(200), ForeignKey('customers.code'), nullable=False, index=True)
+    customer = relationship("Customer", back_populates="payments")
+    
+    # مبلغ اصلی
+    amount = Column(Numeric(20, 2), nullable=False, comment="مبلغ (تومان یا تتر)")
+    
+    # نوع ارز
+    currency = Column(String(20), nullable=False, index=True, comment="TETHER یا TOMAN")
+    
+    # نرخ تبدیل (برای تومان)
+    exchange_rate = Column(Numeric(20, 2), nullable=True, comment="نرخ تبدیل تومان به دلار")
+    
+    # معادل دلار (همیشه محاسبه می‌شود)
+    amount_usd = Column(Numeric(20, 2), nullable=False, comment="معادل دلار")
+    
+    # شماره فیش
+    receipt_number = Column(String(200), nullable=True, comment="شماره فیش بانکی")
+    
+    # تاریخ پرداخت
+    payment_date = Column(DateTime, nullable=False, index=True)
+    
+    # توضیحات
+    notes = Column(Text, nullable=True)
+    
+    # منبع
+    source_sheet = Column(String(200), nullable=True, comment="شیت منبع")
+    
+    # زمان ثبت
+    created_at = Column(DateTime, default=datetime.now)
+    
+    # Index
+    __table_args__ = (
+        Index('idx_payments_customer_date', 'customer_code', 'payment_date'),
+    )
+    
+    def __repr__(self):
+        return f"<Payment(customer='{self.customer_code}', amount={self.amount_usd} USD)>"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "customer_code": self.customer_code,
+            "amount": float(self.amount) if self.amount else 0,
+            "currency": self.currency,
+            "exchange_rate": float(self.exchange_rate) if self.exchange_rate else None,
+            "amount_usd": float(self.amount_usd) if self.amount_usd else 0,
+            "receipt_number": self.receipt_number,
+            "payment_date": self.payment_date.isoformat() if self.payment_date else None,
+            "notes": self.notes
+        }

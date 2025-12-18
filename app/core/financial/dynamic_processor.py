@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 from app.models.financial import (
     SheetImport, RawData, FieldMapping, 
     Account, AccountGold, AccountSilver, Sale, Platform,
-    SheetType, TargetField, DataType
+    SheetType, TargetField, DataType, TransferStatus
 )
 import logging
 
@@ -54,10 +54,11 @@ class DynamicDataProcessor:
         # بررسی نوع شیت
         sheet_type = self.sheet_import.sheet_type
         
-        # خواندن داده‌های پردازش نشده
+        # خواندن داده‌های پردازش نشده و منتقل نشده
         raw_data_list = self.session.query(RawData).filter_by(
             sheet_import_id=sheet_import_id,
-            processed=False
+            processed=False,
+            transferred=False  # 🆕 فقط داده‌های منتقل نشده
         ).all()
         
         stats = {
@@ -84,6 +85,12 @@ class DynamicDataProcessor:
                 
                 # علامت‌گذاری به عنوان پردازش شده
                 raw_data.processed = True
+                
+                # 🆕 علامت‌گذاری به عنوان منتقل شده
+                raw_data.transferred = True
+                raw_data.transferred_at = datetime.now()
+                raw_data.transfer_status = TransferStatus.TRANSFERRED
+                
                 stats['processed'] += 1
                 
             except Exception as e:
@@ -91,6 +98,11 @@ class DynamicDataProcessor:
                 error_msg = f"سطر {raw_data.row_number}: {str(e)}"
                 stats['error_details'].append(error_msg)
                 raw_data.processing_errors = error_msg
+                
+                # 🆕 علامت‌گذاری خطا در انتقال
+                raw_data.transfer_status = TransferStatus.FAILED
+                raw_data.transfer_error = error_msg
+                
                 logger.error(error_msg)
         
         # به‌روزرسانی آمار SheetImport
@@ -229,7 +241,7 @@ class DynamicDataProcessor:
             logger.debug(f"  → Silver Bonus: {silver_bonus}")
     
     def _process_sale_row(self, raw_data: RawData):
-        """پردازش یک سطر فروش"""
+        """پردازش یک سطر فروش با محاسبه دقیق بهای تمام شده"""
         # استخراج فیلدها
         label = self._extract_field(raw_data, TargetField.ACCOUNT_ID)
         sale_quantity = self._extract_field(raw_data, TargetField.SALE_QUANTITY)
@@ -256,8 +268,14 @@ class DynamicDataProcessor:
         else:
             sale_type = sale_type.lower()
         
-        # محاسبه مبلغ
+        # محاسبه مبلغ فروش
         sale_amount = sale_quantity * sale_rate
+        
+        # 🚀 محاسبه بهای تمام شده
+        cost_basis = self._calculate_cost_basis(account, sale_type, sale_quantity)
+        
+        # 🚀 محاسبه سود
+        profit = sale_amount - cost_basis
         
         # ایجاد Sale
         sale = Sale(
@@ -267,13 +285,54 @@ class DynamicDataProcessor:
             quantity=sale_quantity,
             sale_rate=sale_rate,
             sale_amount=sale_amount,
+            cost_basis=cost_basis,  # ✅ اضافه شد
+            profit=profit,  # ✅ اضافه شد
             customer=customer_code,
             sale_date=sale_date,
             staff_profit=staff_profit,
             source_sheet=self.sheet_import.sheet_name
         )
         self.session.add(sale)
-        logger.debug(f"✅ Sale: {label} → {sale_quantity} {sale_type} @ {sale_rate} (platform: {self.sheet_import.platform})")
+        logger.debug(f"✅ Sale: {label} → {sale_quantity} {sale_type} @ {sale_rate} | Cost: {cost_basis}, Profit: {profit}")
+    
+    def _calculate_cost_basis(self, account: Account, sale_type: str, quantity: Decimal) -> Decimal:
+        """
+        محاسبه بهای تمام شده بر اساس نرخ خرید آکانت
+        
+        نکته مهم: هر آکانت یکبار خریداری می‌شود با یک نرخ ثابت.
+        این نرخ برای تمام فروش‌های آن آکانت استفاده می‌شود.
+        """
+        if sale_type == 'gold':
+            # پیدا کردن خریدهای گلد این آکانت
+            gold_purchases = self.session.query(AccountGold).filter_by(
+                label=account.label
+            ).all()
+            
+            if not gold_purchases:
+                logger.warning(f"⚠️ Account '{account.label}' هیچ خرید گلدی ندارد! Cost=0")
+                return Decimal('0')
+            
+            # محاسبه میانگین وزنی نرخ خرید
+            total_gold = sum(p.gold_quantity for p in gold_purchases)
+            total_cost = sum(p.purchase_cost for p in gold_purchases)
+            
+            if total_gold == 0:
+                return Decimal('0')
+            
+            avg_price = total_cost / total_gold
+            cost_basis = avg_price * quantity
+            
+            logger.debug(f"  Gold: {quantity} × {avg_price} = {cost_basis}")
+            return cost_basis
+        
+        elif sale_type == 'silver':
+            # سیلور رایگان است → Cost = 0
+            logger.debug(f"  Silver: رایگان → Cost=0")
+            return Decimal('0')
+        
+        else:
+            logger.warning(f"⚠️ نوع فروش نامشخص: {sale_type}, Cost=0")
+            return Decimal('0')
     
     def _process_bonus_row(self, raw_data: RawData):
         """پردازش یک سطر بونوس/سیلور"""

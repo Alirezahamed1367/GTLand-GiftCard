@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 
-from app.models.financial import get_financial_session, FieldRole, FieldMapping
+from app.models.financial import get_financial_session, FieldMapping
 from app.core.database import DatabaseManager
 from app.core.google_sheets import GoogleSheetExtractor
 

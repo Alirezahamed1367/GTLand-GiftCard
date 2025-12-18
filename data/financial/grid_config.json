@@ -1,0 +1,39 @@
+{
+  "visible_columns": [
+    "label",
+    "email",
+    "supplier",
+    "gold_purchased",
+    "purchase_rate",
+    "purchase_cost",
+    "total_sold",
+    "total_revenue",
+    "total_profit",
+    "profit_pct",
+    "remaining_gold",
+    "remaining_silver"
+  ],
+  "column_order": [
+    "label",
+    "email",
+    "supplier",
+    "gold_purchased",
+    "purchase_rate",
+    "purchase_cost",
+    "total_sold",
+    "total_revenue",
+    "total_profit",
+    "profit_pct",
+    "remaining_gold",
+    "remaining_silver"
+  ],
+  "custom_formulas": [
+    {
+      "name": "شتون تشت",
+      "formula": "{purchase_rate} * {total_profit}",
+      "format": "number"
+    }
+  ],
+  "show_platforms": true,
+  "platform_columns": []
+}

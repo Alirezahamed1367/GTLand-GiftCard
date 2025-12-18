@@ -29,7 +29,8 @@ from .simple_models import (
     Sale,              # فروش‌ها (gold یا silver)
     SaleType,          # نوع فروش (Enum)
     AccountSummary,    # خلاصه محاسبات (Materialized View)
-    Customer           # مشتریان
+    Customer,          # مشتریان (با سیستم اعتبار)
+    Payment            # پرداخت‌های مشتریان (Tether/Toman)
 )
 
 # ═══════════════════════════════════════════════════════════════
@@ -45,35 +46,17 @@ from .dynamic_models import (
     CustomReport,      # گزارش‌های سفارشی
     SheetType,         # نوع شیت (Enum)
     DataType,          # نوع داده (Enum)
-    TargetField        # نقش فیلد (Enum)
+    TargetField,       # نقش فیلد (Enum)
+    TransferStatus     # وضعیت انتقال (Enum) 🆕
 )
 
 # ═══════════════════════════════════════════════════════════════
-# FIELD ROLES & CUSTOM FIELDS (قابل پیکربندی توسط کاربر)
+# RAW DATA & IMPORT BATCH
 # ═══════════════════════════════════════════════════════════════
 
-from .field_roles import (
-    FieldRole,              # نقش‌های فیلد
-    RolePreset,             # پیش‌فرض‌ها
-    init_default_roles,     # ایجاد نقش‌های پیش‌فرض
-    init_default_presets    # ایجاد preset‌های پیش‌فرض
+from .raw_data import (
+    ImportBatch        # دسته‌های Import
 )
-
-# حذف import قدیمی custom_fields که با dynamic_models جایگزین شد
-# from .custom_fields import (
-#     CustomField,     # فیلدهای سفارشی
-#     FieldMapping     # نگاشت فیلدها
-# )
-
-# ═══════════════════════════════════════════════════════════════
-# RAW DATA (داده‌های خام از Google Sheets) - قدیمی
-# ═══════════════════════════════════════════════════════════════
-
-# از raw_data.py قدیمی استفاده نمی‌کنیم - جایگزین شده با dynamic_models
-# from .raw_data import (
-#     RawData as OldRawData,  # داده‌های خام قدیمی
-#     ImportBatch     # دسته‌های import
-# )
 
 # ═══════════════════════════════════════════════════════════════
 # EXPORTS
@@ -96,6 +79,7 @@ __all__ = [
     'SaleType',
     'AccountSummary',
     'Customer',
+    'Payment',
     
     # Dynamic Models
     'SheetImport',
@@ -108,9 +92,6 @@ __all__ = [
     'DataType',
     'TargetField',
     
-    # Field Roles (old system - kept for compatibility)
-    'FieldRole',
-    'RolePreset',
-    'init_default_roles',
-    'init_default_presets',
+    # Import Batch
+    'ImportBatch',
 ]

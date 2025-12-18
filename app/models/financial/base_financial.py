@@ -78,10 +78,11 @@ def init_financial_db():
     """
     ایجاد تمام جداول در دیتابیس مالی
     """
+    # Import models to register them with SQLAlchemy
     from app.models.financial import (
-        Department, Account, Customer, Supplier,
-        Seller, Transaction, SilverTransaction,
-        Payment, ProductType
+        Account, AccountGold, AccountSilver, Sale, Customer, Payment,
+        SheetImport, RawData, FieldMapping, Platform,
+        DiscrepancyReport, CustomReport, ImportBatch
     )
     
     FinancialBase.metadata.create_all(bind=financial_engine)
